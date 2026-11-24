@@ -1,0 +1,1748 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VeggieChain - End-to-End Service Prototype</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #e8edea;
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .veggie-header-gradient {
+            background: linear-gradient(180deg, #98e6b8 0%, #c8f3d9 45%, #f8fafc 100%);
+        }
+        .floating-nav {
+            box-shadow: 0 -4px 24px rgba(15, 23, 42, 0.07);
+        }
+        .nav-indicator {
+            height: 3px;
+            border-radius: 99px;
+            background-color: #117a37;
+            transition: all 0.2s ease;
+        }
+        #podCanvas {
+            touch-action: none;
+            cursor: crosshair;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center sm:py-5">
+
+    <!-- Mobile App Frame Container -->
+    <div id="appFrame" class="relative w-full sm:w-[412px] h-screen sm:h-[850px] bg-slate-50 sm:rounded-[40px] sm:border-[8px] sm:border-slate-900 shadow-2xl overflow-hidden flex flex-col">
+
+        <!-- Top Status Bar -->
+        <div id="topStatusBar" class="hidden sm:flex justify-between items-center px-7 pt-3 pb-1 bg-[#98e6b8] text-slate-900 text-xs font-semibold select-none z-30 transition-colors">
+            <span>09:41</span>
+            <div class="w-24 h-5 bg-slate-900 rounded-full"></div>
+            <div class="flex items-center gap-1.5">
+                <i class="fa-solid fa-signal"></i>
+                <i class="fa-solid fa-wifi"></i>
+                <i class="fa-solid fa-battery-full"></i>
+            </div>
+        </div>
+
+        <!-- ROLE SWITCHER BAR (Cross-Service Demonstration Header) -->
+        <div class="bg-slate-900 text-white px-3 py-2 z-30 shrink-0 border-b border-slate-800">
+            <div class="flex items-center justify-between gap-1 bg-slate-800/90 p-1 rounded-xl text-[11px] font-bold">
+                <button onclick="switchRole('buyer')" id="roleBtn-buyer" class="role-btn flex-1 py-1.5 px-2 rounded-lg bg-[#117a37] text-white transition flex items-center justify-center gap-1.5">
+                    <i class="fa-solid fa-bag-shopping text-[10px]"></i>
+                    <span>Pembeli</span>
+                </button>
+                <button onclick="switchRole('ops')" id="roleBtn-ops" class="role-btn flex-1 py-1.5 px-2 rounded-lg text-slate-300 hover:text-white transition flex items-center justify-center gap-1.5 relative">
+                    <i class="fa-solid fa-chart-line text-[10px]"></i>
+                    <span>Gudang & ML</span>
+                    <span id="opsAlertDot" class="w-2 h-2 rounded-full bg-amber-400"></span>
+                </button>
+                <button onclick="switchRole('farmer')" id="roleBtn-farmer" class="role-btn flex-1 py-1.5 px-2 rounded-lg text-slate-300 hover:text-white transition flex items-center justify-center gap-1.5 relative">
+                    <i class="fa-solid fa-tractor text-[10px]"></i>
+                    <span>Petani Mitra</span>
+                    <span id="farmerAlertDot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Global Toast Notification -->
+        <div id="toast" class="fixed sm:absolute top-20 left-1/2 -translate-x-1/2 z-50 hidden transition-all duration-300 w-[90%] max-w-[360px]">
+            <div class="bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-lg flex items-center gap-3 text-xs font-medium border border-slate-700">
+                <span id="toastIcon" class="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                    <i class="fa-solid fa-check"></i>
+                </span>
+                <span id="toastMessage" class="leading-snug">Notifikasi sistem</span>
+            </div>
+        </div>
+
+        <!-- ==================== ROLE 1: PEMBELI (B2C / B2B) ==================== -->
+        <div id="roleContainer-buyer" class="role-container flex-1 flex flex-col overflow-hidden">
+            <main id="buyerScroll" class="flex-1 overflow-y-auto no-scrollbar pb-28">
+
+                <!-- VIEW 1.1: BERANDA -->
+                <section id="view-beranda" class="buyer-view">
+                    <div class="veggie-header-gradient px-5 pt-4 pb-5 relative overflow-hidden">
+                        <div class="absolute right-0 top-6 opacity-15 pointer-events-none">
+                            <i class="fa-solid fa-seedling text-[110px] text-emerald-900"></i>
+                        </div>
+
+                        <div class="flex items-center justify-between mb-4 relative z-10">
+                            <div class="flex items-center gap-2">
+                                <div class="w-9 h-9 rounded-xl bg-[#117a37] text-white flex items-center justify-center shadow-sm">
+                                    <i class="fa-solid fa-leaf text-base"></i>
+                                </div>
+                                <span class="font-extrabold text-lg tracking-tight text-slate-900">
+                                    Veggie<span class="text-[#117a37]">Chain</span>
+                                </span>
+                            </div>
+
+                            <div class="flex items-center gap-2">
+                                <button onclick="toggleBuyerMode()" class="px-2.5 py-1 rounded-full bg-white/85 backdrop-blur-sm border border-emerald-200 text-[11px] font-bold text-emerald-800 shadow-sm flex items-center gap-1 active:scale-95 transition">
+                                    <i class="fa-solid fa-user"></i>
+                                    <span id="buyerModeLabel">B2C Rumah Tangga</span>
+                                </button>
+                                <button onclick="openCartModal()" class="relative w-10 h-10 rounded-full bg-white/90 text-slate-800 flex items-center justify-center shadow-sm active:scale-95 transition">
+                                    <i class="fa-solid fa-basket-shopping text-[#117a37]"></i>
+                                    <span id="cartBadge" class="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center border-2 border-white">0</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-between mb-5 relative z-10">
+                            <div>
+                                <h1 class="text-[22px] font-extrabold text-slate-900 leading-tight">Selamat Datang,</h1>
+                                <p id="greetingName" class="text-base font-semibold text-slate-600">Budi Santoso</p>
+                            </div>
+                            <button onclick="switchBuyerTab('profil')" class="w-11 h-11 rounded-full bg-emerald-100/90 border-2 border-white text-emerald-800 font-bold text-base flex items-center justify-center shadow-sm">
+                                B
+                            </button>
+                        </div>
+
+                        <div class="relative z-10 flex items-center bg-white rounded-full p-1.5 pl-4 shadow-sm border border-slate-200/70">
+                            <i class="fa-solid fa-magnifying-glass text-slate-400 text-sm mr-2.5"></i>
+                            <input id="homeSearchInput" type="text" oninput="handleSearch(this.value)" placeholder="Cari sayur segar, buah, atau olahan..." class="w-full text-sm text-slate-700 placeholder-slate-400 focus:outline-none bg-transparent">
+                            <button onclick="openFilterModal()" class="w-10 h-10 rounded-full bg-[#117a37] hover:bg-emerald-800 text-white flex items-center justify-center shrink-0 shadow-sm active:scale-95 transition">
+                                <i class="fa-solid fa-sliders text-sm"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 4 Categories -->
+                    <div class="px-5 pt-1 pb-5">
+                        <div class="grid grid-cols-4 gap-3 text-center">
+                            <button onclick="selectCategory('Sayur Segar')" class="group flex flex-col items-center">
+                                <div class="w-16 h-16 rounded-2xl bg-emerald-100/80 border border-emerald-200/60 flex items-center justify-center mb-1.5 group-active:scale-95 transition">
+                                    <span class="text-2xl">🥬</span>
+                                </div>
+                                <span class="text-[11px] font-semibold text-slate-700 leading-tight">Sayur Segar</span>
+                            </button>
+                            <button onclick="selectCategory('Buah Lokal')" class="group flex flex-col items-center">
+                                <div class="w-16 h-16 rounded-2xl bg-rose-100/70 border border-rose-200/60 flex items-center justify-center mb-1.5 group-active:scale-95 transition">
+                                    <span class="text-2xl">🍅</span>
+                                </div>
+                                <span class="text-[11px] font-semibold text-slate-700 leading-tight">Buah Lokal</span>
+                            </button>
+                            <button onclick="selectCategory('Olahan Grade-B')" class="group flex flex-col items-center">
+                                <div class="w-16 h-16 rounded-2xl bg-amber-100/80 border border-amber-200/60 flex items-center justify-center mb-1.5 group-active:scale-95 transition">
+                                    <span class="text-2xl">🥫</span>
+                                </div>
+                                <span class="text-[11px] font-semibold text-slate-700 leading-tight">Olahan Grade-B</span>
+                            </button>
+                            <button onclick="selectCategory('Paket B2B')" class="group flex flex-col items-center">
+                                <div class="w-16 h-16 rounded-2xl bg-teal-100/80 border border-teal-200/60 flex items-center justify-center mb-1.5 group-active:scale-95 transition">
+                                    <span class="text-2xl">📦</span>
+                                </div>
+                                <span class="text-[11px] font-semibold text-slate-700 leading-tight">Paket B2B</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Real-Time Cold Storage Banner -->
+                    <div class="px-5 mb-5">
+                        <div class="bg-emerald-900 text-white rounded-2xl p-3.5 flex items-center justify-between shadow-sm">
+                            <div class="flex items-center gap-3">
+                                <div class="w-9 h-9 rounded-xl bg-emerald-800 flex items-center justify-center text-emerald-300 shrink-0">
+                                    <i class="fa-solid fa-snowflake"></i>
+                                </div>
+                                <div>
+                                    <p class="text-xs font-bold text-emerald-100">Stok Cold Storage Real-Time</p>
+                                    <p class="text-[11px] text-emerald-300/90">Suhu Hub Lembang: 4°C • Lulus Inspeksi QC</p>
+                                </div>
+                            </div>
+                            <span class="px-2 py-1 rounded-lg bg-emerald-700/80 text-[10px] font-bold text-emerald-200">LIVE</span>
+                        </div>
+                    </div>
+
+                    <!-- Section Header -->
+                    <div class="px-5 flex items-center justify-between mb-3">
+                        <div>
+                            <h2 class="text-base font-extrabold text-slate-900">Rekomendasi Panen Segar</h2>
+                            <p id="activeFilterSubtitle" class="text-[11px] text-slate-500">Semua Kategori • Grade-A & Grade-B</p>
+                        </div>
+                        <button onclick="resetFilters()" class="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-[#117a37] text-xs font-semibold flex items-center gap-1">
+                            <span>Reset</span>
+                            <i class="fa-solid fa-rotate-right text-[10px]"></i>
+                        </button>
+                    </div>
+
+                    <div id="productListContainer" class="px-5 space-y-4"></div>
+                </section>
+
+                <!-- VIEW 1.2: KATALOG -->
+                <section id="view-katalog" class="buyer-view hidden px-5 pt-5">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h1 class="text-xl font-extrabold text-slate-900">Katalog Hasil Tani</h1>
+                            <p class="text-xs text-slate-500">Tersinkronisasi langsung dengan WMS Gudang</p>
+                        </div>
+                        <button onclick="openCartModal()" class="relative w-10 h-10 rounded-full bg-white text-slate-800 flex items-center justify-center shadow-sm border border-slate-200/70">
+                            <i class="fa-solid fa-basket-shopping text-[#117a37]"></i>
+                            <span id="cartBadgeCatalog" class="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center">0</span>
+                        </button>
+                    </div>
+
+                    <div class="flex gap-2 overflow-x-auto no-scrollbar pb-3 mb-3">
+                        <button onclick="setGradeFilter('ALL')" id="pill-ALL" class="grade-pill px-3.5 py-1.5 rounded-full text-xs font-semibold bg-[#117a37] text-white shrink-0">Semua Grade</button>
+                        <button onclick="setGradeFilter('Grade-A')" id="pill-Grade-A" class="grade-pill px-3.5 py-1.5 rounded-full text-xs font-semibold bg-white text-slate-600 border border-slate-200 shrink-0">Grade-A (Segar)</button>
+                        <button onclick="setGradeFilter('Grade-B')" id="pill-Grade-B" class="grade-pill px-3.5 py-1.5 rounded-full text-xs font-semibold bg-white text-slate-600 border border-slate-200 shrink-0">Grade-B (Olahan Zero-Waste)</button>
+                    </div>
+
+                    <div id="catalogGridContainer" class="space-y-4"></div>
+                </section>
+
+                <!-- VIEW 1.3: PESANAN & POD -->
+                <section id="view-pesanan" class="buyer-view hidden px-5 pt-5">
+                    <div class="mb-4">
+                        <h1 class="text-xl font-extrabold text-slate-900">Pelacakan Pesanan & POD</h1>
+                        <p class="text-xs text-slate-500">Alur Fulfillment, Label QR & Proof of Delivery Digital</p>
+                    </div>
+
+                    <div class="grid grid-cols-2 bg-slate-200/70 p-1 rounded-2xl mb-4 text-xs font-bold">
+                        <button onclick="filterOrders('active')" id="orderTabActive" class="py-2 rounded-xl bg-white text-emerald-800 shadow-sm transition">Dalam Proses</button>
+                        <button onclick="filterOrders('completed')" id="orderTabCompleted" class="py-2 rounded-xl text-slate-600 transition">Selesai (POD)</button>
+                    </div>
+
+                    <div id="ordersListContainer" class="space-y-4"></div>
+                </section>
+
+                <!-- VIEW 1.4: PROFIL -->
+                <section id="view-profil" class="buyer-view hidden px-5 pt-5">
+                    <div class="bg-white rounded-3xl p-5 shadow-sm border border-slate-200/70 mb-4">
+                        <div class="flex items-center gap-4 mb-4">
+                            <div class="w-14 h-14 rounded-full bg-emerald-100 text-emerald-800 font-extrabold text-xl flex items-center justify-center border border-emerald-200">
+                                B
+                            </div>
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <h2 class="text-base font-extrabold text-slate-900">Budi Santoso</h2>
+                                    <span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">Terverifikasi</span>
+                                </div>
+                                <p class="text-xs text-slate-500">budi.santoso@email.com • Bandung</p>
+                                <p id="profileAccountType" class="text-xs font-semibold text-[#117a37] mt-1">Akun Konsumen Rumah Tangga (B2C)</p>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-50 rounded-2xl p-3.5 border border-slate-200/70 flex items-center justify-between">
+                            <div>
+                                <p class="text-xs font-bold text-slate-800">Mode Akun Pembeli</p>
+                                <p class="text-[11px] text-slate-500">Aktifkan B2B untuk harga grosir & kontrak pasokan</p>
+                            </div>
+                            <button onclick="toggleBuyerMode()" class="px-3 py-1.5 rounded-xl bg-[#117a37] text-white text-xs font-bold active:scale-95 transition">
+                                Ubah Mode
+                            </button>
+                        </div>
+                    </div>
+
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2.5 px-1">Akses Cepat Peran Sistem</h3>
+                    <div class="bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-200/70 divide-y divide-slate-100 mb-4">
+                        <button onclick="switchRole('ops')" class="w-full p-4 flex items-center justify-between text-left hover:bg-slate-50 transition">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-xl bg-emerald-100 text-[#117a37] flex items-center justify-center">
+                                    <i class="fa-solid fa-chart-line"></i>
+                                </div>
+                                <div>
+                                    <p class="text-sm font-bold text-slate-900">Dasbor Gudang, ML & QC</p>
+                                    <p class="text-[11px] text-slate-500">Jalankan Demand Forecasting & inspeksi Grade-A/B</p>
+                                </div>
+                            </div>
+                            <i class="fa-solid fa-chevron-right text-slate-400 text-xs"></i>
+                        </button>
+
+                        <button onclick="switchRole('farmer')" class="w-full p-4 flex items-center justify-between text-left hover:bg-slate-50 transition">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+                                    <i class="fa-solid fa-tractor"></i>
+                                </div>
+                                <div>
+                                    <p class="text-sm font-bold text-slate-900">Portal Kemitraan Petani</p>
+                                    <p class="text-[11px] text-slate-500">Konfirmasi rencana pasokan & kelola Purchase Order</p>
+                                </div>
+                            </div>
+                            <i class="fa-solid fa-chevron-right text-slate-400 text-xs"></i>
+                        </button>
+                    </div>
+                </section>
+            </main>
+
+            <!-- Bottom Nav: Pembeli -->
+            <nav class="floating-nav bg-white rounded-t-[26px] px-4 pt-2.5 pb-4 z-30 border-t border-slate-200/70 shrink-0">
+                <div class="grid grid-cols-4 items-center text-center">
+                    <button onclick="switchBuyerTab('beranda')" id="nav-beranda" class="buyer-nav-btn flex flex-col items-center justify-center text-[#117a37] font-bold">
+                        <i class="fa-solid fa-house text-base mb-1"></i>
+                        <span class="text-[11px]">Beranda</span>
+                        <div class="nav-indicator w-8 mt-1 opacity-100"></div>
+                    </button>
+                    <button onclick="switchBuyerTab('katalog')" id="nav-katalog" class="buyer-nav-btn flex flex-col items-center justify-center text-slate-400 font-medium">
+                        <i class="fa-solid fa-magnifying-glass text-base mb-1"></i>
+                        <span class="text-[11px]">Jelajahi</span>
+                        <div class="nav-indicator w-8 mt-1 opacity-0"></div>
+                    </button>
+                    <button onclick="switchBuyerTab('pesanan')" id="nav-pesanan" class="buyer-nav-btn relative flex flex-col items-center justify-center text-slate-400 font-medium">
+                        <i class="fa-regular fa-clipboard text-base mb-1"></i>
+                        <span class="text-[11px]">Pesanan</span>
+                        <span id="orderNavBadge" class="absolute top-0 right-5 w-2 h-2 rounded-full bg-rose-500"></span>
+                        <div class="nav-indicator w-8 mt-1 opacity-0"></div>
+                    </button>
+                    <button onclick="switchBuyerTab('profil')" id="nav-profil" class="buyer-nav-btn flex flex-col items-center justify-center text-slate-400 font-medium">
+                        <i class="fa-regular fa-user text-base mb-1"></i>
+                        <span class="text-[11px]">Profil</span>
+                        <div class="nav-indicator w-8 mt-1 opacity-0"></div>
+                    </button>
+                </div>
+            </nav>
+        </div>
+
+        <!-- ==================== ROLE 2: GUDANG, ML & SOURCING (OPS) ==================== -->
+        <div id="roleContainer-ops" class="role-container hidden flex-1 flex flex-col overflow-hidden">
+            <main id="opsScroll" class="flex-1 overflow-y-auto no-scrollbar pb-24">
+
+                <!-- Ops Header -->
+                <div class="bg-white px-5 pt-4 pb-4 border-b border-slate-200/80">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <span class="text-[10px] font-bold uppercase tracking-wider text-[#117a37] bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/70">WMS • ML Engine • Sourcing</span>
+                            <h1 class="text-lg font-extrabold text-slate-900 mt-1">Operasional Rantai Pasok</h1>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-[11px] font-bold text-slate-700">Hub Lembang</p>
+                            <p class="text-[10px] text-emerald-700 font-semibold">Cold Storage: 4°C</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VIEW 2.1: DEMAND FORECASTING (ML) & SUPPLY PLANNING -->
+                <section id="opsView-forecast" class="ops-view px-5 pt-4 space-y-4">
+
+                    <!-- Parameter Input Card -->
+                    <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm space-y-3">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h2 class="text-sm font-extrabold text-slate-900">Demand Forecasting (LSTM)</h2>
+                                <p class="text-[11px] text-slate-500">Prediksi kebutuhan stok 7 hari ke depan</p>
+                            </div>
+                            <span class="px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold">MAPE 18.4%</span>
+                        </div>
+
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-700 mb-1">Komoditas Cold Storage</label>
+                            <select id="fcCommoditySelect" onchange="runDemandForecast()" class="w-full text-xs font-semibold text-slate-800 bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:border-[#117a37]">
+                                <option value="PRD-001">Brokoli Organik Hidroponik (Stok: 145 kg)</option>
+                                <option value="PRD-002">Tomat Beefsteak Merah Segar (Stok: 210 kg)</option>
+                                <option value="PRD-005">Wortel Baby Manis Lembang (Stok: 310 kg)</option>
+                            </select>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-2.5">
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 mb-1">Prakiraan Cuaca</label>
+                                <select id="fcWeather" onchange="runDemandForecast()" class="w-full text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl p-2">
+                                    <option value="1.15">Hujan Tinggi (+15%)</option>
+                                    <option value="1.00">Cerah Berawan (Normal)</option>
+                                    <option value="1.10">Kemarau Kering (+10%)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 mb-1">Kalender & Musim</label>
+                                <select id="fcHoliday" onchange="runDemandForecast()" class="w-full text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl p-2">
+                                    <option value="1.25">Libur Panjang / Akhir Pekan</option>
+                                    <option value="1.00">Hari Kerja Normal</option>
+                                    <option value="1.40">Musim Perayaan / Nataru</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Forecast Output & Restock Action Card -->
+                    <div id="forecastResultCard" class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm space-y-3.5">
+                        <!-- Rendered dynamically by runDemandForecast() -->
+                    </div>
+
+                    <!-- Recent Supply Plans Sent to Farmers -->
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="text-xs font-extrabold text-slate-800">Status Formulir Rencana Pasokan</h3>
+                            <span class="text-[11px] text-slate-400">Process Requirement</span>
+                        </div>
+                        <div id="opsSupplyPlanList" class="space-y-2.5"></div>
+                    </div>
+                </section>
+
+                <!-- VIEW 2.2: PENGADAAN (PO) & QUALITY CONTROL (GRADING) -->
+                <section id="opsView-qc" class="ops-view hidden px-5 pt-4 space-y-4">
+
+                    <!-- Section A: Purchase Orders -->
+                    <div>
+                        <h2 class="text-sm font-extrabold text-slate-900 mb-1">Purchase Order (PO) Mitra Petani</h2>
+                        <p class="text-[11px] text-slate-500 mb-2.5">Terbitkan PO setelah petani menyepakati volume & harga</p>
+                        <div id="opsPoList" class="space-y-2.5"></div>
+                    </div>
+
+                    <!-- Section B: Quality Control & Zero-Waste Grading -->
+                    <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm space-y-3">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h2 class="text-sm font-extrabold text-slate-900">Inspeksi QC & Grading Gudang</h2>
+                                <p class="text-[11px] text-slate-500">Pemisahan Grade-A (Segar) & Grade-B (Olahan)</p>
+                            </div>
+                            <span class="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold">Zero Waste</span>
+                        </div>
+
+                        <div id="opsQcQueueContainer"></div>
+                    </div>
+                </section>
+
+                <!-- VIEW 2.3: LOGISTIK, QR SCAN & 3PL PEAK SEASON -->
+                <section id="opsView-logistics" class="ops-view hidden px-5 pt-4 space-y-4">
+
+                    <!-- Peak Season 3PL Switch -->
+                    <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex items-center justify-between">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <h2 class="text-sm font-extrabold text-slate-900">Mode Peak Season (3PL)</h2>
+                                <span id="peakSeasonBadge" class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold">NORMAL</span>
+                            </div>
+                            <p class="text-[11px] text-slate-500 mt-0.5">Otomatis limpahkan pengiriman ke mitra logistik 3PL</p>
+                        </div>
+                        <button onclick="togglePeakSeason()" id="peakSeasonBtn" class="px-3.5 py-2 rounded-xl bg-slate-800 text-white text-xs font-bold active:scale-95 transition">
+                            Aktifkan
+                        </button>
+                    </div>
+
+                    <!-- Active Delivery Dispatch Queue -->
+                    <div>
+                        <h3 class="text-xs font-extrabold text-slate-800 mb-2">Antrean Pengiriman & Scan Barcode QR</h3>
+                        <div id="opsDeliveryQueue" class="space-y-3"></div>
+                    </div>
+                </section>
+            </main>
+
+            <!-- Bottom Nav: Gudang & ML -->
+            <nav class="floating-nav bg-white rounded-t-[26px] px-4 pt-2.5 pb-4 z-30 border-t border-slate-200/70 shrink-0">
+                <div class="grid grid-cols-3 items-center text-center">
+                    <button onclick="switchOpsTab('forecast')" id="opsNav-forecast" class="ops-nav-btn flex flex-col items-center justify-center text-[#117a37] font-bold">
+                        <i class="fa-solid fa-chart-area text-base mb-1"></i>
+                        <span class="text-[11px]">Forecast ML</span>
+                        <div class="nav-indicator w-8 mt-1 opacity-100"></div>
+                    </button>
+                    <button onclick="switchOpsTab('qc')" id="opsNav-qc" class="ops-nav-btn flex flex-col items-center justify-center text-slate-400 font-medium">
+                        <i class="fa-solid fa-clipboard-check text-base mb-1"></i>
+                        <span class="text-[11px]">PO & QC Grading</span>
+                        <div class="nav-indicator w-8 mt-1 opacity-0"></div>
+                    </button>
+                    <button onclick="switchOpsTab('logistics')" id="opsNav-logistics" class="ops-nav-btn flex flex-col items-center justify-center text-slate-400 font-medium">
+                        <i class="fa-solid fa-truck-ramp-box text-base mb-1"></i>
+                        <span class="text-[11px]">Logistik & 3PL</span>
+                        <div class="nav-indicator w-8 mt-1 opacity-0"></div>
+                    </button>
+                </div>
+            </nav>
+        </div>
+
+        <!-- ==================== ROLE 3: PETANI MITRA (GAPOKTAN) ==================== -->
+        <div id="roleContainer-farmer" class="role-container hidden flex-1 flex flex-col overflow-hidden">
+            <main id="farmerScroll" class="flex-1 overflow-y-auto no-scrollbar pb-24">
+
+                <!-- Farmer Header -->
+                <div class="bg-emerald-900 text-white px-5 pt-4 pb-5">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="px-2.5 py-0.5 rounded-full bg-emerald-800 text-emerald-200 text-[10px] font-bold">Mitra Off-Taker Terverifikasi</span>
+                        <span class="text-[11px] text-emerald-300">ID: GPT-LMB-01</span>
+                    </div>
+                    <h1 class="text-lg font-extrabold">Gapoktan Tani Makmur</h1>
+                    <p class="text-xs text-emerald-200/90">Desa Cikole, Lembang • Komoditas Sayur & Buah</p>
+                </div>
+
+                <!-- VIEW 3.1: FORMULIR RENCANA PASOKAN -->
+                <section id="farmerView-plans" class="farmer-view px-5 pt-4 space-y-3">
+                    <div>
+                        <h2 class="text-sm font-extrabold text-slate-900">Formulir Rencana Pasokan Masuk</h2>
+                        <p class="text-[11px] text-slate-500">Konfirmasi kesanggupan volume & harga sebelum PO diterbitkan</p>
+                    </div>
+                    <div id="farmerPlanList" class="space-y-3"></div>
+                </section>
+
+                <!-- VIEW 3.2: PURCHASE ORDER (PO) & PENGIRIMAN PANEN -->
+                <section id="farmerView-po" class="farmer-view hidden px-5 pt-4 space-y-3">
+                    <div>
+                        <h2 class="text-sm font-extrabold text-slate-900">Purchase Order (PO) Aktif</h2>
+                        <p class="text-[11px] text-slate-500">Siapkan hasil panen dan kirimkan ke Gudang Hub VeggieChain</p>
+                    </div>
+                    <div id="farmerPoList" class="space-y-3"></div>
+                </section>
+            </main>
+
+            <!-- Bottom Nav: Petani Mitra -->
+            <nav class="floating-nav bg-white rounded-t-[26px] px-4 pt-2.5 pb-4 z-30 border-t border-slate-200/70 shrink-0">
+                <div class="grid grid-cols-2 items-center text-center">
+                    <button onclick="switchFarmerTab('plans')" id="farmerNav-plans" class="farmer-nav-btn flex flex-col items-center justify-center text-[#117a37] font-bold">
+                        <i class="fa-solid fa-file-contract text-base mb-1"></i>
+                        <span class="text-[11px]">Rencana Pasokan</span>
+                        <div class="nav-indicator w-10 mt-1 opacity-100"></div>
+                    </button>
+                    <button onclick="switchFarmerTab('po')" id="farmerNav-po" class="farmer-nav-btn flex flex-col items-center justify-center text-slate-400 font-medium">
+                        <i class="fa-solid fa-boxes-packing text-base mb-1"></i>
+                        <span class="text-[11px]">Purchase Order</span>
+                        <div class="nav-indicator w-10 mt-1 opacity-0"></div>
+                    </button>
+                </div>
+            </nav>
+        </div>
+
+        <!-- ==================== MODALS (SHARED / BUYER) ==================== -->
+        <!-- MODAL 1: PRODUCT DETAIL -->
+        <div id="productModal" class="hidden absolute inset-0 z-40 bg-slate-900/50 backdrop-blur-sm flex items-end">
+            <div class="bg-white w-full rounded-t-[32px] max-h-[90%] overflow-y-auto no-scrollbar p-5">
+                <div class="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-4"></div>
+                <div id="productModalContent"></div>
+            </div>
+        </div>
+
+        <!-- MODAL 2: FILTER MODAL -->
+        <div id="filterModal" class="hidden absolute inset-0 z-40 bg-slate-900/50 backdrop-blur-sm flex items-end">
+            <div class="bg-white w-full rounded-t-[32px] p-5">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-base font-extrabold text-slate-900">Filter Katalog & Grading QC</h3>
+                    <button onclick="closeModal('filterModal')" class="w-8 h-8 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <div class="space-y-4">
+                    <div>
+                        <p class="text-xs font-bold text-slate-700 mb-2">Kualitas Grading Gudang</p>
+                        <div class="grid grid-cols-3 gap-2 text-xs font-semibold">
+                            <button onclick="applyModalFilter('ALL')" class="py-2.5 rounded-xl border border-emerald-600 bg-emerald-50 text-emerald-800">Semua</button>
+                            <button onclick="applyModalFilter('Grade-A')" class="py-2.5 rounded-xl border border-slate-200 text-slate-700">Grade-A Segar</button>
+                            <button onclick="applyModalFilter('Grade-B')" class="py-2.5 rounded-xl border border-slate-200 text-slate-700">Grade-B Olahan</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MODAL 3: CART & PAYMENT GATEWAY -->
+        <div id="cartModal" class="hidden absolute inset-0 z-40 bg-slate-900/50 backdrop-blur-sm flex items-end">
+            <div class="bg-white w-full rounded-t-[32px] max-h-[92%] flex flex-col overflow-hidden">
+                <div class="p-5 border-b border-slate-100 flex items-center justify-between shrink-0">
+                    <div>
+                        <h3 class="text-base font-extrabold text-slate-900">Keranjang & Checkout</h3>
+                        <p id="cartModeSub" class="text-[11px] text-[#117a37] font-semibold">Harga Konsumen B2C</p>
+                    </div>
+                    <button onclick="closeModal('cartModal')" class="w-8 h-8 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <div id="cartBody" class="p-5 overflow-y-auto no-scrollbar flex-1 space-y-4"></div>
+            </div>
+        </div>
+
+        <!-- MODAL 4: DIGITAL POD SIGNATURE -->
+        <div id="podModal" class="hidden absolute inset-0 z-40 bg-slate-900/50 backdrop-blur-sm flex items-end">
+            <div class="bg-white w-full rounded-t-[32px] max-h-[92%] overflow-y-auto no-scrollbar p-5">
+                <div class="flex items-center justify-between mb-3">
+                    <div>
+                        <span class="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold">PROOF OF DELIVERY (POD)</span>
+                        <h3 class="text-base font-extrabold text-slate-900 mt-1">Konfirmasi Penerimaan Barang</h3>
+                    </div>
+                    <button onclick="closeModal('podModal')" class="w-8 h-8 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <div id="podModalContent"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // ==================== DATA MASTER PRODUK & COLD STORAGE ====================
+        const productsData = [
+            {
+                id: 'PRD-001',
+                name: 'Brokoli Organik Hidroponik',
+                category: 'Sayur Segar',
+                grade: 'Grade-A',
+                badgeText: 'Panen Pagi • Grade-A',
+                badgeColor: 'bg-[#117a37] text-white',
+                farmer: 'Gapoktan Tani Makmur, Lembang',
+                warehouse: 'Cold Storage Hub Lembang (4°C)',
+                stockKg: 145,
+                baseWeeklySales: 180,
+                baseFarmerPrice: 14500,
+                rating: 4.9,
+                priceB2C: 24000,
+                priceB2B: 19500,
+                unit: '/kg',
+                image: 'https://images.unsplash.com/photo-1584270354949-c26b0d5b4a0c?auto=format&fit=crop&w=800&q=80',
+                qcNotes: 'Lolos inspeksi QC fisik: kuntum hijau padat, bebas ulat, sudah dicuci air ozon dan dikemas plastik berpori.'
+            },
+            {
+                id: 'PRD-002',
+                name: 'Tomat Beefsteak Merah Segar',
+                category: 'Buah Lokal',
+                grade: 'Grade-A',
+                badgeText: 'Terpopuler • Grade-A',
+                badgeColor: 'bg-[#117a37] text-white',
+                farmer: 'Kelompok Tani Subur, Ciwidey',
+                warehouse: 'Cold Storage Hub Ciwidey (8°C)',
+                stockKg: 210,
+                baseWeeklySales: 220,
+                baseFarmerPrice: 10500,
+                rating: 4.8,
+                priceB2C: 18000,
+                priceB2B: 14500,
+                unit: '/kg',
+                image: 'https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&w=800&q=80',
+                qcNotes: 'Tingkat kematangan 85%, diameter seragam 7-8 cm, kulit mulus tanpa memar.'
+            },
+            {
+                id: 'PRD-003',
+                name: 'Puree & Pasta Tomat Alami (Zero Waste)',
+                category: 'Olahan Grade-B',
+                grade: 'Grade-B',
+                badgeText: 'Olahan Grade-B • Hemat 30%',
+                badgeColor: 'bg-amber-500 text-white',
+                farmer: 'Unit Pengolahan Mitra VeggieChain',
+                warehouse: 'Gudang Olahan Bandung (5°C)',
+                stockKg: 88,
+                baseWeeklySales: 75,
+                baseFarmerPrice: 8000,
+                rating: 4.7,
+                priceB2C: 15000,
+                priceB2B: 12000,
+                unit: '/pouch 500g',
+                image: 'https://images.unsplash.com/photo-1607305387299-a3d9611cd469?auto=format&fit=crop&w=800&q=80',
+                qcNotes: 'Diproduksi dari hasil sortasi Grade-B (ukuran tidak seragam namun nutrisi & kesegaran terjaga). Menekan pemborosan pangan.'
+            },
+            {
+                id: 'PRD-004',
+                name: 'Paket Pasokan Sayur Resto & Kafe (25 Kg)',
+                category: 'Paket B2B',
+                grade: 'Grade-A',
+                badgeText: 'Paket B2B • Kontrak Pasokan',
+                badgeColor: 'bg-teal-700 text-white',
+                farmer: 'Konsorsium Gapoktan Bandung Raya',
+                warehouse: 'Central Cold Storage Bandung (4°C)',
+                stockKg: 32,
+                baseWeeklySales: 28,
+                baseFarmerPrice: 280000,
+                rating: 5.0,
+                priceB2C: 420000,
+                priceB2B: 365000,
+                unit: '/krat 25kg',
+                image: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80',
+                qcNotes: 'Berisi campuran Selada Romaine, Wortel Brastagi, Bawang Daun, dan Kentang Dieng. Termasuk prioritas armada pendingin.'
+            },
+            {
+                id: 'PRD-005',
+                name: 'Wortel Baby Manis Lembang',
+                category: 'Sayur Segar',
+                grade: 'Grade-A',
+                badgeText: 'Stok Melimpah • Grade-A',
+                badgeColor: 'bg-[#117a37] text-white',
+                farmer: 'Mitra Tani Cikole, Lembang',
+                warehouse: 'Cold Storage Hub Lembang (4°C)',
+                stockKg: 310,
+                baseWeeklySales: 240,
+                baseFarmerPrice: 9500,
+                rating: 4.8,
+                priceB2C: 16500,
+                priceB2B: 13000,
+                unit: '/kg',
+                image: 'https://images.unsplash.com/photo-1598170845058-32b9d6a5da37?auto=format&fit=crop&w=800&q=80',
+                qcNotes: 'Sudah melalui pencucian sikat halus (washed carrot), manis alami, siap masak.'
+            }
+        ];
+
+        // ==================== STATE APLIKASI LINTAS PERAN ====================
+        let state = {
+            activeRole: 'buyer', // 'buyer' | 'ops' | 'farmer'
+            buyerMode: 'B2C',
+            selectedCategory: 'ALL',
+            selectedGrade: 'ALL',
+            searchQuery: '',
+            cart: [{ productId: 'PRD-001', qty: 2 }],
+            orderFilter: 'active',
+            isPeakSeason: false,
+            currentForecast: null,
+            // Formulir Rencana Pasokan (Sourcing -> Petani)
+            supplyPlans: [
+                {
+                    id: 'SPF-2026-014',
+                    commodityId: 'PRD-002',
+                    commodityName: 'Tomat Beefsteak Merah Segar',
+                    targetQty: 120,
+                    refPrice: 10500,
+                    harvestDate: '26 Nov 2026',
+                    status: 'WAITING_FARMER', // WAITING_FARMER -> CONFIRMED_BY_FARMER -> PO_ISSUED
+                    confirmedQty: 120,
+                    agreedPrice: 10500
+                }
+            ],
+            // Purchase Orders (Sourcing <-> Petani -> Gudang QC)
+            purchaseOrders: [
+                {
+                    poNumber: 'PO-VC-2026-088',
+                    planId: 'SPF-2026-011',
+                    commodityId: 'PRD-001',
+                    commodityName: 'Brokoli Organik Hidroponik',
+                    qty: 90,
+                    agreedPrice: 14500,
+                    totalAmount: 1305000,
+                    status: 'HARVEST_SENT_TO_QC' // PO_ISSUED -> HARVEST_SENT_TO_QC -> QC_COMPLETED
+                }
+            ],
+            // Customer Orders (Pembeli <-> Logistik & 3PL)
+            orders: [
+                {
+                    id: 'VC-20261124-089',
+                    date: 'Hari ini, 08:15 WIB',
+                    status: 'ARRIVED_PENDING_POD',
+                    statusLabel: 'Tiba • Menunggu Tanda Tangan POD',
+                    courier: 'Armada Cold-Van VC-04 (Kang Asep)',
+                    qrCodeResi: 'QR-WMS-88921-BDG',
+                    paymentMethod: 'QRIS Instan (Terverifikasi)',
+                    items: [
+                        { name: 'Brokoli Organik Hidroponik', qty: 2, price: 24000 },
+                        { name: 'Tomat Beefsteak Merah Segar', qty: 1, price: 18000 }
+                    ],
+                    shippingFee: 10000,
+                    total: 76000,
+                    podSigned: false,
+                    podTimestamp: null
+                },
+                {
+                    id: 'VC-20261120-042',
+                    date: '20 Nov 2026, 10:30 WIB',
+                    status: 'COMPLETED',
+                    statusLabel: 'Selesai • POD Terarsip',
+                    courier: '3PL Logistik Segar Express',
+                    qrCodeResi: 'QR-WMS-88104-BDG',
+                    paymentMethod: 'Virtual Account BCA',
+                    items: [
+                        { name: 'Puree & Pasta Tomat Alami (Zero Waste)', qty: 3, price: 15000 }
+                    ],
+                    shippingFee: 10000,
+                    total: 55000,
+                    podSigned: true,
+                    podTimestamp: '20 Nov 2026, 14:12 WIB'
+                }
+            ]
+        };
+
+        // ==================== UTILITIES ====================
+        function formatRupiah(num) {
+            return 'IDR ' + Math.round(num).toLocaleString('id-ID');
+        }
+
+        function showToast(msg, isWarning = false) {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toastMessage');
+            const toastIcon = document.getElementById('toastIcon');
+
+            toastMsg.textContent = msg;
+            if (isWarning) {
+                toastIcon.className = 'w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0';
+                toastIcon.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i>';
+            } else {
+                toastIcon.className = 'w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0';
+                toastIcon.innerHTML = '<i class="fa-solid fa-check"></i>';
+            }
+
+            toast.classList.remove('hidden');
+            clearTimeout(window.toastTimer);
+            window.toastTimer = setTimeout(() => toast.classList.add('hidden'), 3000);
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.add('hidden');
+        }
+
+        // ==================== ROLE SWITCHING ====================
+        function switchRole(role) {
+            state.activeRole = role;
+            document.querySelectorAll('.role-container').forEach(el => el.classList.add('hidden'));
+            document.getElementById(`roleContainer-${role}`).classList.remove('hidden');
+
+            document.querySelectorAll('.role-btn').forEach(btn => {
+                btn.classList.remove('bg-[#117a37]', 'text-white');
+                btn.classList.add('text-slate-300');
+            });
+            const activeRoleBtn = document.getElementById(`roleBtn-${role}`);
+            activeRoleBtn.classList.remove('text-slate-300');
+            activeRoleBtn.classList.add('bg-[#117a37]', 'text-white');
+
+            const statusBar = document.getElementById('topStatusBar');
+            if (role === 'buyer') {
+                statusBar.className = 'hidden sm:flex justify-between items-center px-7 pt-3 pb-1 bg-[#98e6b8] text-slate-900 text-xs font-semibold select-none z-30';
+                renderHomeProducts();
+                renderOrders();
+            } else if (role === 'ops') {
+                statusBar.className = 'hidden sm:flex justify-between items-center px-7 pt-3 pb-1 bg-white text-slate-900 text-xs font-semibold select-none z-30';
+                runDemandForecast();
+                renderOpsSupplyPlans();
+                renderOpsPoAndQc();
+                renderOpsLogistics();
+            } else if (role === 'farmer') {
+                statusBar.className = 'hidden sm:flex justify-between items-center px-7 pt-3 pb-1 bg-emerald-900 text-white text-xs font-semibold select-none z-30';
+                renderFarmerPlans();
+                renderFarmerPos();
+            }
+        }
+
+        // ==================== ROLE 1: PEMBELI LOGIC ====================
+        function switchBuyerTab(tabName) {
+            document.querySelectorAll('.buyer-view').forEach(sec => sec.classList.add('hidden'));
+            document.getElementById(`view-${tabName}`).classList.remove('hidden');
+
+            document.querySelectorAll('.buyer-nav-btn').forEach(btn => {
+                btn.classList.remove('text-[#117a37]', 'font-bold');
+                btn.classList.add('text-slate-400', 'font-medium');
+                btn.querySelector('.nav-indicator').classList.replace('opacity-100', 'opacity-0');
+            });
+
+            const activeBtn = document.getElementById(`nav-${tabName}`);
+            activeBtn.classList.remove('text-slate-400', 'font-medium');
+            activeBtn.classList.add('text-[#117a37]', 'font-bold');
+            activeBtn.querySelector('.nav-indicator').classList.replace('opacity-0', 'opacity-100');
+
+            document.getElementById('buyerScroll').scrollTop = 0;
+            if (tabName === 'katalog') renderCatalogGrid();
+            if (tabName === 'pesanan') renderOrders();
+        }
+
+        function toggleBuyerMode() {
+            state.buyerMode = state.buyerMode === 'B2C' ? 'B2B' : 'B2C';
+            const badgeLabel = document.getElementById('buyerModeLabel');
+            const greetingName = document.getElementById('greetingName');
+            const profileType = document.getElementById('profileAccountType');
+
+            if (state.buyerMode === 'B2B') {
+                badgeLabel.textContent = 'B2B Mitra Resto';
+                greetingName.textContent = 'Budi (Resto Daun Hijau)';
+                profileType.textContent = 'Akun Mitra Bisnis / Resto (B2B - Harga Grosir)';
+                showToast('Mode B2B Aktif: Menampilkan harga grosir mitra.');
+            } else {
+                badgeLabel.textContent = 'B2C Rumah Tangga';
+                greetingName.textContent = 'Budi Santoso';
+                profileType.textContent = 'Akun Konsumen Rumah Tangga (B2C)';
+                showToast('Mode B2C Aktif: Menampilkan harga eceran rumah tangga.');
+            }
+            renderHomeProducts();
+            renderCatalogGrid();
+            updateCartBadges();
+        }
+
+        function selectCategory(cat) {
+            state.selectedCategory = state.selectedCategory === cat ? 'ALL' : cat;
+            updateFilterSubtitle();
+            renderHomeProducts();
+        }
+
+        function handleSearch(val) {
+            state.searchQuery = val.toLowerCase();
+            renderHomeProducts();
+        }
+
+        function setGradeFilter(grade) {
+            state.selectedGrade = grade;
+            document.querySelectorAll('.grade-pill').forEach(p => {
+                p.className = 'grade-pill px-3.5 py-1.5 rounded-full text-xs font-semibold bg-white text-slate-600 border border-slate-200 shrink-0';
+            });
+            const activePill = document.getElementById(`pill-${grade}`);
+            if (activePill) activePill.className = 'grade-pill px-3.5 py-1.5 rounded-full text-xs font-semibold bg-[#117a37] text-white shrink-0';
+            renderCatalogGrid();
+        }
+
+        function applyModalFilter(grade) {
+            state.selectedGrade = grade;
+            updateFilterSubtitle();
+            renderHomeProducts();
+            closeModal('filterModal');
+        }
+
+        function resetFilters() {
+            state.selectedCategory = 'ALL';
+            state.selectedGrade = 'ALL';
+            state.searchQuery = '';
+            document.getElementById('homeSearchInput').value = '';
+            updateFilterSubtitle();
+            renderHomeProducts();
+        }
+
+        function updateFilterSubtitle() {
+            const catText = state.selectedCategory === 'ALL' ? 'Semua Kategori' : state.selectedCategory;
+            const gradeText = state.selectedGrade === 'ALL' ? 'Grade-A & Grade-B' : state.selectedGrade;
+            document.getElementById('activeFilterSubtitle').textContent = `${catText} • ${gradeText}`;
+        }
+
+        function openFilterModal() {
+            document.getElementById('filterModal').classList.remove('hidden');
+        }
+
+        function createProductCardHTML(product) {
+            const activePrice = state.buyerMode === 'B2B' ? product.priceB2B : product.priceB2C;
+            const originalPrice = product.priceB2C;
+
+            return `
+                <div onclick="openProductDetail('${product.id}')" class="bg-white rounded-[24px] p-3 shadow-sm border border-slate-200/70 hover:shadow-md transition cursor-pointer">
+                    <div class="relative h-40 w-full rounded-[18px] overflow-hidden mb-3 bg-slate-100">
+                        <img src="${product.image}" alt="${product.name}" onerror="this.src='https://placehold.co/600x400/dcfce7/166534?text=VeggieChain+Fresh'" class="w-full h-full object-cover">
+                        <div class="absolute top-3 left-3 ${product.badgeColor} px-3 py-1 rounded-full text-[11px] font-bold flex items-center gap-1.5 shadow-sm">
+                            <i class="fa-solid fa-circle-check text-[10px]"></i>
+                            <span>${product.badgeText}</span>
+                        </div>
+                        <div class="absolute bottom-2.5 right-2.5 bg-slate-900/80 backdrop-blur-sm text-white px-2.5 py-1 rounded-full text-[10px] font-semibold tabular-nums">
+                            Stok Gudang: ${product.stockKg} kg
+                        </div>
+                    </div>
+
+                    <div class="flex items-start justify-between gap-2 mb-1">
+                        <h3 class="font-extrabold text-[15px] text-slate-900 leading-snug">${product.name}</h3>
+                        <div class="flex items-center gap-1 shrink-0 pt-0.5">
+                            <i class="fa-solid fa-star text-amber-400 text-xs"></i>
+                            <span class="text-xs font-bold text-slate-700">${product.rating}</span>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-1.5 text-slate-500 text-xs mb-2.5">
+                        <i class="fa-solid fa-location-dot text-slate-400 text-[11px]"></i>
+                        <span class="truncate">${product.farmer}</span>
+                    </div>
+
+                    <div class="flex items-center justify-between pt-1.5 border-t border-slate-100">
+                        <div>
+                            ${state.buyerMode === 'B2B' ? `<span class="text-[10px] line-through text-slate-400 block">${formatRupiah(originalPrice)}</span>` : ''}
+                            <div class="flex items-baseline gap-1">
+                                <span class="text-[15px] font-extrabold text-[#117a37]">${formatRupiah(activePrice)}</span>
+                                <span class="text-xs text-slate-400 font-medium">${product.unit}</span>
+                            </div>
+                        </div>
+                        <button onclick="event.stopPropagation(); addToCart('${product.id}', 1)" class="px-3.5 py-2 rounded-full bg-emerald-50 hover:bg-[#117a37] text-[#117a37] hover:text-white font-bold text-xs flex items-center gap-1.5 transition">
+                            <i class="fa-solid fa-plus"></i>
+                            <span>Keranjang</span>
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderHomeProducts() {
+            const container = document.getElementById('productListContainer');
+            const filtered = productsData.filter(p => {
+                const matchCat = state.selectedCategory === 'ALL' || p.category === state.selectedCategory;
+                const matchGrade = state.selectedGrade === 'ALL' || p.grade === state.selectedGrade;
+                const matchQuery = p.name.toLowerCase().includes(state.searchQuery) || p.farmer.toLowerCase().includes(state.searchQuery);
+                return matchCat && matchGrade && matchQuery;
+            });
+
+            if (filtered.length === 0) {
+                container.innerHTML = `<div class="bg-white rounded-3xl p-8 text-center border border-slate-200/70"><p class="text-sm font-bold text-slate-800">Produk tidak ditemukan</p></div>`;
+                return;
+            }
+            container.innerHTML = filtered.map(createProductCardHTML).join('');
+        }
+
+        function renderCatalogGrid() {
+            const container = document.getElementById('catalogGridContainer');
+            const filtered = productsData.filter(p => state.selectedGrade === 'ALL' || p.grade === state.selectedGrade);
+            container.innerHTML = filtered.map(createProductCardHTML).join('');
+        }
+
+        function openProductDetail(productId) {
+            const product = productsData.find(p => p.id === productId);
+            if (!product) return;
+            const activePrice = state.buyerMode === 'B2B' ? product.priceB2B : product.priceB2C;
+
+            document.getElementById('productModalContent').innerHTML = `
+                <div class="relative h-44 rounded-2xl overflow-hidden mb-4">
+                    <img src="${product.image}" alt="${product.name}" class="w-full h-full object-cover">
+                    <span class="absolute top-3 left-3 ${product.badgeColor} px-3 py-1 rounded-full text-xs font-bold">${product.badgeText}</span>
+                </div>
+                <h2 class="text-lg font-extrabold text-slate-900 mb-1">${product.name}</h2>
+                <div class="flex items-baseline gap-1.5 mb-4">
+                    <span class="text-xl font-extrabold text-[#117a37]">${formatRupiah(activePrice)}</span>
+                    <span class="text-xs text-slate-500">${product.unit}</span>
+                </div>
+                <div class="space-y-2.5 mb-5">
+                    <div class="p-3 rounded-2xl bg-slate-50 border border-slate-200/70 flex items-start gap-3">
+                        <i class="fa-solid fa-seedling text-emerald-600 mt-0.5"></i>
+                        <div>
+                            <p class="text-[11px] font-bold text-slate-700">Asal Petani Mitra</p>
+                            <p class="text-xs text-slate-600">${product.farmer}</p>
+                        </div>
+                    </div>
+                    <div class="p-3 rounded-2xl bg-slate-50 border border-slate-200/70 flex items-start gap-3">
+                        <i class="fa-solid fa-snowflake text-sky-600 mt-0.5"></i>
+                        <div>
+                            <p class="text-[11px] font-bold text-slate-700">Inventaris Cold Storage (Real-Time WMS)</p>
+                            <p class="text-xs text-slate-600">${product.warehouse} • Tersedia <strong>${product.stockKg} kg</strong></p>
+                        </div>
+                    </div>
+                    <div class="p-3 rounded-2xl bg-emerald-50/70 border border-emerald-200/70 flex items-start gap-3">
+                        <i class="fa-solid fa-clipboard-check text-[#117a37] mt-0.5"></i>
+                        <div>
+                            <p class="text-[11px] font-bold text-emerald-900">Hasil Inspeksi QC (${product.grade})</p>
+                            <p class="text-xs text-emerald-800 leading-relaxed">${product.qcNotes}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex gap-2.5">
+                    <button onclick="closeModal('productModal')" class="px-4 py-3 rounded-2xl bg-slate-100 text-slate-700 font-bold text-xs">Tutup</button>
+                    <button onclick="addToCart('${product.id}', 1); closeModal('productModal');" class="flex-1 py-3 rounded-2xl bg-[#117a37] text-white font-bold text-sm">
+                        + Tambah ke Keranjang
+                    </button>
+                </div>
+            `;
+            document.getElementById('productModal').classList.remove('hidden');
+        }
+
+        function addToCart(productId, qty) {
+            const product = productsData.find(p => p.id === productId);
+            if (!product || product.stockKg <= 0) {
+                showToast('Stok gudang sedang kosong.', true);
+                return;
+            }
+            const existing = state.cart.find(item => item.productId === productId);
+            if (existing) existing.qty += qty;
+            else state.cart.push({ productId, qty });
+
+            updateCartBadges();
+            showToast(`${product.name} ditambahkan ke keranjang.`);
+        }
+
+        function updateCartQty(productId, delta) {
+            const idx = state.cart.findIndex(item => item.productId === productId);
+            if (idx === -1) return;
+            state.cart[idx].qty += delta;
+            if (state.cart[idx].qty <= 0) state.cart.splice(idx, 1);
+            updateCartBadges();
+            renderCartBody();
+        }
+
+        function updateCartBadges() {
+            const totalItems = state.cart.reduce((sum, item) => sum + item.qty, 0);
+            document.getElementById('cartBadge').textContent = totalItems;
+            const catBadge = document.getElementById('cartBadgeCatalog');
+            if (catBadge) catBadge.textContent = totalItems;
+        }
+
+        function openCartModal() {
+            document.getElementById('cartModeSub').textContent = state.buyerMode === 'B2B' ? 'Mode Mitra Bisnis (B2B) • Harga Grosir' : 'Mode Konsumen Rumah Tangga (B2C)';
+            renderCartBody();
+            document.getElementById('cartModal').classList.remove('hidden');
+        }
+
+        function renderCartBody() {
+            const body = document.getElementById('cartBody');
+            if (state.cart.length === 0) {
+                body.innerHTML = `<div class="py-10 text-center"><p class="text-sm font-bold text-slate-800">Keranjang belanja kosong</p></div>`;
+                return;
+            }
+            let subtotal = 0;
+            const itemsHTML = state.cart.map(item => {
+                const product = productsData.find(p => p.id === item.productId);
+                const price = state.buyerMode === 'B2B' ? product.priceB2B : product.priceB2C;
+                const lineTotal = price * item.qty;
+                subtotal += lineTotal;
+                return `
+                    <div class="flex items-center justify-between gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200/70">
+                        <img src="${product.image}" class="w-12 h-12 rounded-xl object-cover shrink-0">
+                        <div class="flex-1 min-w-0">
+                            <p class="text-xs font-bold text-slate-900 truncate">${product.name}</p>
+                            <p class="text-[11px] text-slate-500">${formatRupiah(price)}${product.unit}</p>
+                            <p class="text-xs font-extrabold text-[#117a37]">${formatRupiah(lineTotal)}</p>
+                        </div>
+                        <div class="flex items-center gap-2 bg-white px-2 py-1 rounded-xl border border-slate-200">
+                            <button onclick="updateCartQty('${product.id}', -1)" class="w-5 h-5 text-slate-600 font-bold">-</button>
+                            <span class="text-xs font-bold text-slate-800 w-4 text-center">${item.qty}</span>
+                            <button onclick="updateCartQty('${product.id}', 1)" class="w-5 h-5 text-[#117a37] font-bold">+</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            const shippingFee = state.buyerMode === 'B2B' ? 25000 : 10000;
+            const autoCourier = state.isPeakSeason ? '3PL Segar Express (Peak Season Auto-Assign)' : 'Armada Cold-Van Internal VeggieChain';
+
+            body.innerHTML = `
+                <div class="space-y-2.5">${itemsHTML}</div>
+                <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/70">
+                    <p class="text-xs font-bold text-slate-800 mb-1">Armada Pengiriman</p>
+                    <p class="text-xs text-slate-600 font-medium">${autoCourier}</p>
+                </div>
+                <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/70">
+                    <p class="text-xs font-bold text-slate-800 mb-2">Payment Gateway</p>
+                    <label class="flex items-center justify-between p-2.5 bg-white rounded-xl border border-emerald-500 text-xs cursor-pointer">
+                        <span class="font-semibold text-slate-800">QRIS Instan (Verifikasi Otomatis)</span>
+                        <input type="radio" name="paymentMethod" value="QRIS Instan (Terverifikasi)" checked class="accent-[#117a37]">
+                    </label>
+                </div>
+                <div class="border-t border-slate-100 pt-3 space-y-1 text-xs">
+                    <div class="flex justify-between text-slate-500"><span>Subtotal</span><span class="font-semibold text-slate-800">${formatRupiah(subtotal)}</span></div>
+                    <div class="flex justify-between text-slate-500"><span>Biaya Pengiriman</span><span class="font-semibold text-slate-800">${formatRupiah(shippingFee)}</span></div>
+                    <div class="flex justify-between text-sm font-extrabold text-slate-900 pt-1"><span>Total Bayar</span><span class="text-[#117a37]">${formatRupiah(subtotal + shippingFee)}</span></div>
+                </div>
+                <button onclick="processCheckout(${subtotal}, ${shippingFee})" class="w-full py-3.5 rounded-2xl bg-[#117a37] text-white font-bold text-sm">
+                    Bayar & Terbitkan Picking Ticket
+                </button>
+            `;
+        }
+
+        function processCheckout(subtotal, shippingFee) {
+            const orderItems = state.cart.map(item => {
+                const product = productsData.find(p => p.id === item.productId);
+                product.stockKg = Math.max(0, product.stockKg - item.qty);
+                const price = state.buyerMode === 'B2B' ? product.priceB2B : product.priceB2C;
+                return { name: product.name, qty: item.qty, price };
+            });
+
+            const newOrder = {
+                id: 'VC-20261124-' + Math.floor(100 + Math.random() * 899),
+                date: 'Baru saja',
+                status: 'PACKING_QR',
+                statusLabel: 'Pembayaran Terverifikasi • Packing & Label QR',
+                courier: state.isPeakSeason ? '3PL Segar Express (Peak Season)' : 'Armada Cold-Van VC-02',
+                qrCodeResi: 'QR-WMS-' + Math.floor(10000 + Math.random() * 89999) + '-BDG',
+                paymentMethod: 'QRIS Instan (Terverifikasi)',
+                items: orderItems,
+                shippingFee,
+                total: subtotal + shippingFee,
+                podSigned: false,
+                podTimestamp: null
+            };
+
+            state.orders.unshift(newOrder);
+            state.cart = [];
+            updateCartBadges();
+            renderHomeProducts();
+            closeModal('cartModal');
+            showToast('Pembayaran valid! Picking Ticket diterbitkan ke Gudang & Kurir.');
+            switchBuyerTab('pesanan');
+        }
+
+        function filterOrders(type) {
+            state.orderFilter = type;
+            document.getElementById('orderTabActive').className = type === 'active' ? 'py-2 rounded-xl bg-white text-emerald-800 shadow-sm transition' : 'py-2 rounded-xl text-slate-600 transition';
+            document.getElementById('orderTabCompleted').className = type === 'completed' ? 'py-2 rounded-xl bg-white text-emerald-800 shadow-sm transition' : 'py-2 rounded-xl text-slate-600 transition';
+            renderOrders();
+        }
+
+        function renderOrders() {
+            const container = document.getElementById('ordersListContainer');
+            const filtered = state.orders.filter(o => state.orderFilter === 'active' ? o.status !== 'COMPLETED' : o.status === 'COMPLETED');
+
+            if (filtered.length === 0) {
+                container.innerHTML = `<div class="bg-white rounded-3xl p-8 text-center border border-slate-200/70"><p class="text-sm font-bold text-slate-800">Belum ada pesanan di kategori ini</p></div>`;
+                return;
+            }
+
+            container.innerHTML = filtered.map(order => {
+                const itemsSummary = order.items.map(i => `${i.qty}x ${i.name}`).join(', ');
+                let step = order.status === 'PACKING_QR' ? 2 : order.status === 'IN_TRANSIT' ? 3 : 4;
+
+                return `
+                    <div class="bg-white rounded-3xl p-4 shadow-sm border border-slate-200/70 space-y-3">
+                        <div class="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                            <div>
+                                <p class="text-[11px] font-bold text-slate-400">${order.id}</p>
+                                <p class="text-xs font-extrabold text-[#117a37]">${order.statusLabel}</p>
+                            </div>
+                            <span class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-mono text-[10px] font-bold">
+                                <i class="fa-solid fa-qrcode mr-1"></i>${order.qrCodeResi}
+                            </span>
+                        </div>
+
+                        <div class="grid grid-cols-4 gap-1 text-center text-[9px] font-bold">
+                            <div class="p-1.5 rounded-lg ${step >= 1 ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-400'}">1. Bayar</div>
+                            <div class="p-1.5 rounded-lg ${step >= 2 ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-400'}">2. QC & QR</div>
+                            <div class="p-1.5 rounded-lg ${step >= 3 ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-400'}">3. Kurir</div>
+                            <div class="p-1.5 rounded-lg ${step >= 4 ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-400'}">4. POD</div>
+                        </div>
+
+                        <div class="text-xs text-slate-600">
+                            <p class="font-semibold text-slate-800">${itemsSummary}</p>
+                            <p class="text-[11px] text-slate-500 mt-1"><i class="fa-solid fa-truck-fast mr-1 text-[#117a37]"></i>${order.courier}</p>
+                        </div>
+
+                        <div class="flex items-center justify-between pt-2 border-t border-slate-100">
+                            <div>
+                                <p class="text-[10px] text-slate-400">Total Bayar</p>
+                                <p class="text-sm font-extrabold text-slate-900">${formatRupiah(order.total)}</p>
+                            </div>
+                            ${order.status === 'ARRIVED_PENDING_POD' ? `
+                                <button onclick="openPodModal('${order.id}')" class="px-3.5 py-2 rounded-xl bg-[#117a37] text-white text-xs font-bold">
+                                    Tanda Tangan POD
+                                </button>
+                            ` : order.status === 'COMPLETED' ? `
+                                <button onclick="openPodModal('${order.id}')" class="px-3 py-2 rounded-xl bg-emerald-50 text-[#117a37] border border-emerald-200 text-xs font-bold">
+                                    Lihat Bukti POD
+                                </button>
+                            ` : `
+                                <button onclick="switchRole('ops'); switchOpsTab('logistics');" class="px-3 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold">
+                                    Proses di Gudang →
+                                </button>
+                            `}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // ==================== DIGITAL POD SIGNATURE ====================
+        let isDrawing = false, hasSigned = false;
+        function openPodModal(orderId) {
+            const order = state.orders.find(o => o.id === orderId);
+            if (!order) return;
+            const container = document.getElementById('podModalContent');
+
+            if (order.status === 'COMPLETED') {
+                container.innerHTML = `
+                    <div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-1.5 text-xs">
+                        <p class="font-extrabold text-emerald-900 text-sm">Proof of Delivery (POD) Terarsip</p>
+                        <p class="text-emerald-800">No. Pesanan: <strong>${order.id}</strong></p>
+                        <p class="text-emerald-800">Resi WMS QR: <strong>${order.qrCodeResi}</strong></p>
+                        <p class="text-emerald-800">Waktu Serah Terima: <strong>${order.podTimestamp}</strong></p>
+                    </div>
+                    <button onclick="closeModal('podModal')" class="w-full mt-4 py-3 rounded-2xl bg-slate-900 text-white font-bold text-xs">Tutup</button>
+                `;
+                document.getElementById('podModal').classList.remove('hidden');
+                return;
+            }
+
+            hasSigned = false;
+            container.innerHTML = `
+                <p class="text-xs text-slate-600 mb-3">Bubuhkan tanda tangan digital sebagai bukti serah terima barang dari <strong>${order.courier}</strong>.</p>
+                <div class="bg-slate-50 border-2 border-dashed border-slate-300 rounded-2xl p-2 mb-2">
+                    <canvas id="podCanvas" width="330" height="130" class="w-full h-[130px] bg-white rounded-xl"></canvas>
+                </div>
+                <div class="flex justify-between items-center mb-4">
+                    <span class="text-[10px] text-slate-400">Goreskan jari/mouse di kotak putih</span>
+                    <button onclick="clearPodCanvas()" class="text-xs font-bold text-rose-600">Hapus Ulang</button>
+                </div>
+                <div class="grid grid-cols-2 gap-2.5">
+                    <button onclick="closeModal('podModal'); showToast('Klaim retur QC dicatat.', true);" class="py-3 rounded-2xl bg-rose-50 text-rose-700 border border-rose-200 font-bold text-xs">Ajukan Retur QC</button>
+                    <button onclick="confirmPodSignature('${order.id}')" class="py-3 rounded-2xl bg-[#117a37] text-white font-bold text-xs">Konfirmasi Terima</button>
+                </div>
+            `;
+            document.getElementById('podModal').classList.remove('hidden');
+            initSignatureCanvas();
+        }
+
+        function initSignatureCanvas() {
+            const canvas = document.getElementById('podCanvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+            function getPos(e) {
+                const rect = canvas.getBoundingClientRect();
+                const cx = e.touches ? e.touches[0].clientX : e.clientX;
+                const cy = e.touches ? e.touches[0].clientY : e.clientY;
+                return { x: (cx - rect.left) * (canvas.width / rect.width), y: (cy - rect.top) * (canvas.height / rect.height) };
+            }
+            canvas.onmousedown = (e) => { isDrawing = true; hasSigned = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
+            canvas.onmousemove = (e) => { if (!isDrawing) return; const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); };
+            canvas.onmouseup = () => { isDrawing = false; };
+            canvas.ontouchstart = (e) => { isDrawing = true; hasSigned = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
+            canvas.ontouchmove = (e) => { if (!isDrawing) return; const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); };
+            canvas.ontouchend = () => { isDrawing = false; };
+        }
+
+        function clearPodCanvas() {
+            const canvas = document.getElementById('podCanvas');
+            if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+            hasSigned = false;
+        }
+
+        function confirmPodSignature(orderId) {
+            if (!hasSigned) { showToast('Mohon bubuhkan tanda tangan terlebih dahulu.', true); return; }
+            const order = state.orders.find(o => o.id === orderId);
+            if (order) {
+                order.status = 'COMPLETED';
+                order.statusLabel = 'Selesai • POD Terarsip';
+                order.podSigned = true;
+                order.podTimestamp = 'Hari ini, ' + new Date().toTimeString().slice(0, 5) + ' WIB';
+            }
+            closeModal('podModal');
+            document.getElementById('orderNavBadge').classList.add('hidden');
+            showToast('POD ditandatangani & pesanan selesai.');
+            renderOrders();
+        }
+
+        // ==================== ROLE 2: GUDANG, ML & SOURCING (OPS) ====================
+        function switchOpsTab(tab) {
+            document.querySelectorAll('.ops-view').forEach(el => el.classList.add('hidden'));
+            document.getElementById(`opsView-${tab}`).classList.remove('hidden');
+
+            document.querySelectorAll('.ops-nav-btn').forEach(btn => {
+                btn.classList.remove('text-[#117a37]', 'font-bold');
+                btn.classList.add('text-slate-400', 'font-medium');
+                btn.querySelector('.nav-indicator').classList.replace('opacity-100', 'opacity-0');
+            });
+            const active = document.getElementById(`opsNav-${tab}`);
+            active.classList.remove('text-slate-400', 'font-medium');
+            active.classList.add('text-[#117a37]', 'font-bold');
+            active.querySelector('.nav-indicator').classList.replace('opacity-0', 'opacity-100');
+
+            if (tab === 'forecast') { runDemandForecast(); renderOpsSupplyPlans(); }
+            if (tab === 'qc') renderOpsPoAndQc();
+            if (tab === 'logistics') renderOpsLogistics();
+        }
+
+        function runDemandForecast() {
+            const comId = document.getElementById('fcCommoditySelect').value;
+            const weatherMult = parseFloat(document.getElementById('fcWeather').value);
+            const holidayMult = parseFloat(document.getElementById('fcHoliday').value);
+            const product = productsData.find(p => p.id === comId);
+            if (!product) return;
+
+            // Update dropdown label stock dynamically
+            const selectEl = document.getElementById('fcCommoditySelect');
+            Array.from(selectEl.options).forEach(opt => {
+                const p = productsData.find(x => x.id === opt.value);
+                if (p) opt.textContent = `${p.name} (Stok: ${p.stockKg} kg)`;
+            });
+
+            const predictedDemand = Math.round(product.baseWeeklySales * weatherMult * holidayMult);
+            const bufferStock = Math.round(predictedDemand * 0.15);
+            const requiredTotal = predictedDemand + bufferStock;
+            const deficit = Math.max(0, requiredTotal - product.stockKg);
+            const isRestockNeeded = deficit > 0;
+
+            state.currentForecast = {
+                commodityId: product.id,
+                commodityName: product.name,
+                currentStock: product.stockKg,
+                predictedDemand,
+                recommendedRestock: deficit,
+                isRestockNeeded,
+                refPrice: product.baseFarmerPrice
+            };
+
+            const maxBar = Math.max(product.stockKg, requiredTotal, 1);
+            const stockPct = Math.min(100, Math.round((product.stockKg / maxBar) * 100));
+            const demandPct = Math.min(100, Math.round((requiredTotal / maxBar) * 100));
+
+            document.getElementById('forecastResultCard').innerHTML = `
+                <div class="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                    <div>
+                        <p class="text-[11px] font-bold text-slate-400">Hasil Prediksi Mingguan</p>
+                        <p class="text-sm font-extrabold text-slate-900">${product.name}</p>
+                    </div>
+                    <span class="px-2.5 py-1 rounded-full text-[10px] font-bold ${isRestockNeeded ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}">
+                        ${isRestockNeeded ? 'Perlu Tambah Stok' : 'Stok Mencukupi'}
+                    </span>
+                </div>
+
+                <div class="space-y-2.5 text-xs">
+                    <div>
+                        <div class="flex justify-between font-semibold mb-1">
+                            <span class="text-slate-600">Stok Cold Storage Saat Ini</span>
+                            <span class="text-slate-900 tabular-nums">${product.stockKg} kg</span>
+                        </div>
+                        <div class="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div class="h-full bg-slate-700 rounded-full" style="width: ${stockPct}%"></div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between font-semibold mb-1">
+                            <span class="text-slate-600">Prediksi Permintaan + Buffer 15%</span>
+                            <span class="text-[#117a37] font-bold tabular-nums">${requiredTotal} kg</span>
+                        </div>
+                        <div class="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div class="h-full bg-[#117a37] rounded-full" style="width: ${demandPct}%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-50 rounded-xl p-3 border border-slate-200/70 flex items-center justify-between text-xs">
+                    <span class="text-slate-600 font-medium">Rekomendasi Pengadaan:</span>
+                    <span class="font-extrabold text-slate-900 tabular-nums">${isRestockNeeded ? `+${deficit} kg` : '0 kg (Aman)'}</span>
+                </div>
+
+                ${isRestockNeeded ? `
+                    <button onclick="dispatchSupplyPlanForm()" class="w-full py-3 rounded-xl bg-[#117a37] hover:bg-emerald-800 text-white font-bold text-xs flex items-center justify-center gap-2 transition">
+                        <i class="fa-solid fa-paper-plane"></i>
+                        <span>Buat Jadwal & Kirim Form ke Petani</span>
+                    </button>
+                ` : `
+                    <p class="text-[11px] text-center text-slate-400">Stok gudang pendingin mencukupi untuk proyeksi minggu depan.</p>
+                `}
+            `;
+        }
+
+        function dispatchSupplyPlanForm() {
+            const fc = state.currentForecast;
+            if (!fc || !fc.isRestockNeeded) return;
+
+            const newPlan = {
+                id: 'SPF-2026-' + Math.floor(100 + Math.random() * 899),
+                commodityId: fc.commodityId,
+                commodityName: fc.commodityName,
+                targetQty: fc.recommendedRestock,
+                refPrice: fc.refPrice,
+                harvestDate: '28 Nov 2026',
+                status: 'WAITING_FARMER',
+                confirmedQty: fc.recommendedRestock,
+                agreedPrice: fc.refPrice
+            };
+
+            state.supplyPlans.unshift(newPlan);
+            renderOpsSupplyPlans();
+            showToast(`Formulir ${newPlan.id} dikirim ke Portal Petani Mitra.`);
+        }
+
+        function renderOpsSupplyPlans() {
+            const container = document.getElementById('opsSupplyPlanList');
+            if (state.supplyPlans.length === 0) {
+                container.innerHTML = `<p class="text-xs text-slate-400 text-center py-4">Belum ada rencana pasokan aktif.</p>`;
+                return;
+            }
+            container.innerHTML = state.supplyPlans.map(plan => {
+                const isConfirmed = plan.status === 'CONFIRMED_BY_FARMER';
+                const isPoIssued = plan.status === 'PO_ISSUED';
+                return `
+                    <div class="bg-white rounded-2xl p-3.5 border border-slate-200/80 text-xs space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="font-mono text-[10px] font-bold text-slate-500">${plan.id}</span>
+                            <span class="px-2 py-0.5 rounded-md text-[10px] font-bold ${isPoIssued ? 'bg-slate-100 text-slate-600' : isConfirmed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-50 text-amber-700 border border-amber-200'}">
+                                ${isPoIssued ? 'PO Diterbitkan' : isConfirmed ? 'Disetujui Petani' : 'Menunggu Konfirmasi Petani'}
+                            </span>
+                        </div>
+                        <p class="font-bold text-slate-900">${plan.commodityName} • ${plan.confirmedQty} kg</p>
+                        <div class="flex items-center justify-between pt-1">
+                            <span class="text-[11px] text-slate-500">Harga: ${formatRupiah(plan.agreedPrice)}/kg</span>
+                            ${isConfirmed ? `
+                                <button onclick="issuePurchaseOrder('${plan.id}')" class="px-3 py-1.5 rounded-lg bg-[#117a37] text-white font-bold text-[11px]">
+                                    Terbitkan PO
+                                </button>
+                            ` : !isPoIssued ? `
+                                <button onclick="switchRole('farmer')" class="text-[11px] font-bold text-[#117a37]">
+                                    Buka Portal Petani →
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function issuePurchaseOrder(planId) {
+            const plan = state.supplyPlans.find(p => p.id === planId);
+            if (!plan) return;
+            plan.status = 'PO_ISSUED';
+
+            const newPo = {
+                poNumber: 'PO-VC-2026-' + Math.floor(100 + Math.random() * 899),
+                planId: plan.id,
+                commodityId: plan.commodityId,
+                commodityName: plan.commodityName,
+                qty: plan.confirmedQty,
+                agreedPrice: plan.agreedPrice,
+                totalAmount: plan.confirmedQty * plan.agreedPrice,
+                status: 'PO_ISSUED'
+            };
+
+            state.purchaseOrders.unshift(newPo);
+            renderOpsSupplyPlans();
+            renderOpsPoAndQc();
+            showToast(`Purchase Order ${newPo.poNumber} diterbitkan ke Petani Mitra.`);
+        }
+
+        function renderOpsPoAndQc() {
+            // Render PO List
+            const poContainer = document.getElementById('opsPoList');
+            poContainer.innerHTML = state.purchaseOrders.map(po => `
+                <div class="bg-white rounded-2xl p-3.5 border border-slate-200/80 text-xs flex items-center justify-between">
+                    <div>
+                        <p class="font-mono text-[10px] font-bold text-slate-400">${po.poNumber}</p>
+                        <p class="font-bold text-slate-900">${po.commodityName} (${po.qty} kg)</p>
+                        <p class="text-[11px] text-slate-500">Nilai: ${formatRupiah(po.totalAmount)}</p>
+                    </div>
+                    <span class="px-2.5 py-1 rounded-lg text-[10px] font-bold ${po.status === 'QC_COMPLETED' ? 'bg-emerald-100 text-emerald-800' : po.status === 'HARVEST_SENT_TO_QC' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}">
+                        ${po.status === 'QC_COMPLETED' ? 'Masuk WMS' : po.status === 'HARVEST_SENT_TO_QC' ? 'Tiba di QC' : 'Diproses Petani'}
+                    </span>
+                </div>
+            `).join('');
+
+            // Render QC Grading Form for arrived harvests
+            const qcContainer = document.getElementById('opsQcQueueContainer');
+            const pendingQc = state.purchaseOrders.find(po => po.status === 'HARVEST_SENT_TO_QC');
+
+            if (!pendingQc) {
+                qcContainer.innerHTML = `
+                    <div class="bg-slate-50 rounded-xl p-4 text-center border border-slate-200/70">
+                        <p class="text-xs font-bold text-slate-700">Tidak ada kiriman panen menunggu QC</p>
+                        <p class="text-[11px] text-slate-500 mt-0.5">Kirim hasil panen dari tab Petani Mitra untuk melakukan grading.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const defaultGradeA = Math.round(pendingQc.qty * 0.85);
+            const defaultGradeB = pendingQc.qty - defaultGradeA;
+
+            qcContainer.innerHTML = `
+                <div class="bg-slate-50 rounded-xl p-3 border border-slate-200/80 space-y-3 text-xs">
+                    <div class="flex justify-between items-center">
+                        <span class="font-bold text-slate-900">${pendingQc.commodityName}</span>
+                        <span class="font-mono text-[11px] font-bold text-[#117a37]">Total: ${pendingQc.qty} kg (${pendingQc.poNumber})</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2.5">
+                        <div>
+                            <label class="block text-[10px] font-bold text-emerald-800 mb-1">Grade-A Segar (kg)</label>
+                            <input id="qcGradeAInput" type="number" value="${defaultGradeA}" max="${pendingQc.qty}" min="0" oninput="syncQcSplit(${pendingQc.qty})" class="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-900">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-amber-800 mb-1">Grade-B Olahan (kg)</label>
+                            <input id="qcGradeBInput" type="number" value="${defaultGradeB}" readonly class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 font-bold text-slate-700">
+                        </div>
+                    </div>
+                    <button onclick="submitQcGrading('${pendingQc.poNumber}')" class="w-full py-2.5 rounded-xl bg-[#117a37] text-white font-bold text-xs">
+                        Simpan Hasil QC & Update Stok WMS
+                    </button>
+                </div>
+            `;
+        }
+
+        function syncQcSplit(totalQty) {
+            const valA = Math.min(totalQty, Math.max(0, parseInt(document.getElementById('qcGradeAInput').value) || 0));
+            document.getElementById('qcGradeAInput').value = valA;
+            document.getElementById('qcGradeBInput').value = totalQty - valA;
+        }
+
+        function submitQcGrading(poNumber) {
+            const po = state.purchaseOrders.find(p => p.poNumber === poNumber);
+            if (!po) return;
+
+            const gradeAKg = parseInt(document.getElementById('qcGradeAInput').value) || 0;
+            const gradeBKg = parseInt(document.getElementById('qcGradeBInput').value) || 0;
+
+            // Update Grade-A fresh product stock
+            const freshProduct = productsData.find(p => p.id === po.commodityId);
+            if (freshProduct) freshProduct.stockKg += gradeAKg;
+
+            // Update Grade-B Zero-Waste processed product stock (PRD-003)
+            const processedProduct = productsData.find(p => p.id === 'PRD-003');
+            if (processedProduct && gradeBKg > 0) processedProduct.stockKg += gradeBKg;
+
+            po.status = 'QC_COMPLETED';
+            renderOpsPoAndQc();
+            renderHomeProducts();
+            showToast(`QC Selesai: +${gradeAKg}kg Grade-A & +${gradeBKg}kg Olahan Grade-B masuk stok WMS.`);
+        }
+
+        function togglePeakSeason() {
+            state.isPeakSeason = !state.isPeakSeason;
+            const badge = document.getElementById('peakSeasonBadge');
+            const btn = document.getElementById('peakSeasonBtn');
+
+            if (state.isPeakSeason) {
+                badge.textContent = 'PEAK SEASON (3PL)';
+                badge.className = 'px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold';
+                btn.textContent = 'Nonaktifkan';
+                btn.className = 'px-3.5 py-2 rounded-xl bg-amber-600 text-white text-xs font-bold';
+                showToast('Peak Season Aktif: Pesanan baru otomatis dialihkan ke armada 3PL.');
+            } else {
+                badge.textContent = 'NORMAL';
+                badge.className = 'px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold';
+                btn.textContent = 'Aktifkan';
+                btn.className = 'px-3.5 py-2 rounded-xl bg-slate-800 text-white text-xs font-bold';
+                showToast('Mode Normal: Menggunakan armada Cold-Van internal.');
+            }
+        }
+
+        function renderOpsLogistics() {
+            const container = document.getElementById('opsDeliveryQueue');
+            const activeOrders = state.orders.filter(o => o.status !== 'COMPLETED');
+
+            if (activeOrders.length === 0) {
+                container.innerHTML = `<div class="bg-white rounded-2xl p-6 text-center border border-slate-200/70 text-xs text-slate-500">Semua pesanan pelanggan telah selesai dikirim.</div>`;
+                return;
+            }
+
+            container.innerHTML = activeOrders.map(order => `
+                <div class="bg-white rounded-2xl p-4 border border-slate-200/80 space-y-2.5 text-xs">
+                    <div class="flex items-center justify-between">
+                        <span class="font-bold text-slate-900">${order.id}</span>
+                        <span class="font-mono text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-700">${order.qrCodeResi}</span>
+                    </div>
+                    <p class="text-[11px] text-slate-600">${order.statusLabel}</p>
+                    <p class="text-[11px] text-slate-500"><i class="fa-solid fa-truck mr-1 text-[#117a37]"></i>${order.courier}</p>
+                    ${order.status !== 'ARRIVED_PENDING_POD' ? `
+                        <button onclick="advanceOrderFromOps('${order.id}')" class="w-full py-2.5 rounded-xl bg-slate-900 text-white font-bold text-xs">
+                            ${order.status === 'PACKING_QR' ? 'Scan Label QR & Kirim Kurir' : 'Konfirmasi Kurir Tiba di Tujuan'}
+                        </button>
+                    ` : `
+                        <button onclick="switchRole('buyer'); switchBuyerTab('pesanan');" class="w-full py-2 rounded-xl bg-emerald-50 text-[#117a37] border border-emerald-200 font-bold text-[11px]">
+                            Menunggu Tanda Tangan POD Pembeli →
+                        </button>
+                    `}
+                </div>
+            `).join('');
+        }
+
+        function advanceOrderFromOps(orderId) {
+            const order = state.orders.find(o => o.id === orderId);
+            if (!order) return;
+            if (order.status === 'PACKING_QR') {
+                order.status = 'IN_TRANSIT';
+                order.statusLabel = 'Dikirim Kurir Berpendingin (Scan QR OK)';
+                showToast(`Resi ${order.qrCodeResi} dipindai. Kurir menuju lokasi pelanggan.`);
+            } else if (order.status === 'IN_TRANSIT') {
+                order.status = 'ARRIVED_PENDING_POD';
+                order.statusLabel = 'Tiba • Menunggu Tanda Tangan POD';
+                showToast('Kurir tiba di lokasi. Pembeli dapat menandatangani POD.');
+            }
+            renderOpsLogistics();
+            renderOrders();
+        }
+
+        // ==================== ROLE 3: PETANI MITRA LOGIC ====================
+        function switchFarmerTab(tab) {
+            document.querySelectorAll('.farmer-view').forEach(el => el.classList.add('hidden'));
+            document.getElementById(`farmerView-${tab}`).classList.remove('hidden');
+
+            document.querySelectorAll('.farmer-nav-btn').forEach(btn => {
+                btn.classList.remove('text-[#117a37]', 'font-bold');
+                btn.classList.add('text-slate-400', 'font-medium');
+                btn.querySelector('.nav-indicator').classList.replace('opacity-100', 'opacity-0');
+            });
+            const active = document.getElementById(`farmerNav-${tab}`);
+            active.classList.remove('text-slate-400', 'font-medium');
+            active.classList.add('text-[#117a37]', 'font-bold');
+            active.querySelector('.nav-indicator').classList.replace('opacity-0', 'opacity-100');
+
+            if (tab === 'plans') renderFarmerPlans();
+            if (tab === 'po') renderFarmerPos();
+        }
+
+        function renderFarmerPlans() {
+            const container = document.getElementById('farmerPlanList');
+            container.innerHTML = state.supplyPlans.map(plan => {
+                const isWaiting = plan.status === 'WAITING_FARMER';
+                return `
+                    <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm space-y-3 text-xs">
+                        <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                            <span class="font-mono text-[10px] font-bold text-slate-400">${plan.id}</span>
+                            <span class="px-2 py-0.5 rounded-md text-[10px] font-bold ${isWaiting ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}">
+                                ${isWaiting ? 'Perlu Konfirmasi' : 'Terkonfirmasi'}
+                            </span>
+                        </div>
+                        <div>
+                            <p class="text-sm font-extrabold text-slate-900">${plan.commodityName}</p>
+                            <p class="text-[11px] text-slate-500">Target Panen: ${plan.harvestDate}</p>
+                        </div>
+
+                        ${isWaiting ? `
+                            <div class="grid grid-cols-2 gap-2.5 bg-slate-50 p-2.5 rounded-xl border border-slate-200/70">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-600 mb-1">Volume Sanggup (kg)</label>
+                                    <input id="fQty-${plan.id}" type="number" value="${plan.targetQty}" class="w-full bg-white border border-slate-200 rounded-lg p-1.5 font-bold text-slate-900">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-600 mb-1">Harga Sepakat (/kg)</label>
+                                    <input id="fPrice-${plan.id}" type="number" value="${plan.refPrice}" class="w-full bg-white border border-slate-200 rounded-lg p-1.5 font-bold text-slate-900">
+                                </div>
+                            </div>
+                            <button onclick="confirmFarmerSupply('${plan.id}')" class="w-full py-2.5 rounded-xl bg-[#117a37] text-white font-bold text-xs">
+                                Konfirmasi Volume & Harga Kesepakatan
+                            </button>
+                        ` : `
+                            <div class="bg-emerald-50/70 p-2.5 rounded-xl border border-emerald-200/70 text-emerald-900">
+                                <p>Disepakati: <strong>${plan.confirmedQty} kg</strong> @ <strong>${formatRupiah(plan.agreedPrice)}/kg</strong></p>
+                            </div>
+                        `}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function confirmFarmerSupply(planId) {
+            const plan = state.supplyPlans.find(p => p.id === planId);
+            if (!plan) return;
+            const qty = parseInt(document.getElementById(`fQty-${planId}`).value) || plan.targetQty;
+            const price = parseInt(document.getElementById(`fPrice-${planId}`).value) || plan.refPrice;
+
+            plan.confirmedQty = qty;
+            plan.agreedPrice = price;
+            plan.status = 'CONFIRMED_BY_FARMER';
+
+            renderFarmerPlans();
+            showToast(`Kesepakatan ${plan.id} dikirim ke Tim Sourcing VeggieChain.`);
+        }
+
+        function renderFarmerPos() {
+            const container = document.getElementById('farmerPoList');
+            if (state.purchaseOrders.length === 0) {
+                container.innerHTML = `<div class="bg-white rounded-2xl p-6 text-center border border-slate-200/70 text-xs text-slate-500">Belum ada Purchase Order aktif.</div>`;
+                return;
+            }
+            container.innerHTML = state.purchaseOrders.map(po => `
+                <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm space-y-2.5 text-xs">
+                    <div class="flex items-center justify-between">
+                        <span class="font-mono text-[10px] font-bold text-slate-500">${po.poNumber}</span>
+                        <span class="px-2 py-0.5 rounded-md text-[10px] font-bold ${po.status === 'PO_ISSUED' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}">
+                            ${po.status === 'PO_ISSUED' ? 'Siap Panen' : 'Terkirim ke Gudang'}
+                        </span>
+                    </div>
+                    <p class="text-sm font-extrabold text-slate-900">${po.commodityName}</p>
+                    <p class="text-slate-600">Kuantitas: <strong>${po.qty} kg</strong> • Total: <strong>${formatRupiah(po.totalAmount)}</strong></p>
+                    ${po.status === 'PO_ISSUED' ? `
+                        <button onclick="sendHarvestToWarehouse('${po.poNumber}')" class="w-full py-2.5 rounded-xl bg-[#117a37] text-white font-bold text-xs">
+                            Selesai Panen & Kirim ke Gudang QC
+                        </button>
+                    ` : `
+                        <button onclick="switchRole('ops'); switchOpsTab('qc');" class="w-full py-2 rounded-xl bg-slate-100 text-slate-700 font-bold text-[11px]">
+                            Lihat Proses Inspeksi QC di Gudang →
+                        </button>
+                    `}
+                </div>
+            `).join('');
+        }
+
+        function sendHarvestToWarehouse(poNumber) {
+            const po = state.purchaseOrders.find(p => p.poNumber === poNumber);
+            if (!po) return;
+            po.status = 'HARVEST_SENT_TO_QC';
+            renderFarmerPos();
+            showToast(`Hasil panen ${po.poNumber} dikirim ke Hub Gudang untuk inspeksi QC.`);
+        }
+
+        // ==================== INIT ====================
+        window.onload = function() {
+            renderHomeProducts();
+            updateCartBadges();
+            runDemandForecast();
+        };
+    </script>
+</body>
+</html>
