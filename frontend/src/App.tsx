@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Wifi, BatteryFull, Signal } from 'lucide-react';
 import type {
   BuyerMode,
@@ -21,6 +21,7 @@ import { Toast } from './components/common/Toast';
 import { BuyerApp } from './components/buyer/BuyerApp';
 import { OpsApp } from './components/ops/OpsApp';
 import { FarmerApp } from './components/farmer/FarmerApp';
+import { veggieApi } from './services/api';
 
 export function App() {
   const [activeRole, setActiveRole] = useState<UserRole>('buyer');
@@ -28,7 +29,7 @@ export function App() {
     'forecast'
   );
 
-  // Shared Domain States (Nantinya akan disinkronkan ke Backend / Supabase)
+  // Shared Domain States (Tersinkronisasi dengan Backend & Supabase)
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
   const [buyerMode, setBuyerMode] = useState<BuyerMode>('B2C');
   const [cart, setCart] = useState<CartItem[]>([
@@ -53,11 +54,29 @@ export function App() {
     setTimeout(() => setToast(null), 3000);
   };
 
+  // Ambil data terbaru dari Supabase melalui backend-core
+  const refreshState = async () => {
+    try {
+      const data = await veggieApi.fetchState();
+      if (data.products?.length) setProducts(data.products);
+      if (data.orders) setOrders(data.orders);
+      if (data.supplyPlans) setSupplyPlans(data.supplyPlans);
+      if (data.purchaseOrders) setPurchaseOrders(data.purchaseOrders);
+    } catch {
+      // Tetap gunakan state lokal jika backend belum dijalankan
+    }
+  };
+
+  useEffect(() => {
+    refreshState();
+  }, []);
+
   const handleSwitchRole = (role: UserRole, subTab?: string) => {
     setActiveRole(role);
     if (role === 'ops' && subTab) {
       setOpsSubTab(subTab as 'forecast' | 'qc' | 'logistics');
     }
+    refreshState();
   };
 
   // ==================== HANDLERS: PEMBELI ====================
@@ -103,134 +122,82 @@ export function App() {
     );
   };
 
-  const handleCheckout = () => {
-    const orderItems = cart.map((item) => {
-      const prod = products.find((p) => p.id === item.productId)!;
-      const price = buyerMode === 'B2B' ? prod.priceB2B : prod.priceB2C;
-      return { name: prod.name, qty: item.qty, price };
-    });
-
-    const subtotal = orderItems.reduce((s, i) => s + i.price * i.qty, 0);
-    const shippingFee = buyerMode === 'B2B' ? 25000 : 10000;
-
-    // Kurangi stok gudang real-time
-    setProducts((prev) =>
-      prev.map((prod) => {
-        const bought = cart.find((c) => c.productId === prod.id);
-        return bought
-          ? { ...prod, stockKg: Math.max(0, prod.stockKg - bought.qty) }
-          : prod;
-      })
-    );
-
-    const newOrder: Order = {
-      id: 'VC-20261124-' + Math.floor(100 + Math.random() * 899),
-      date: 'Baru saja',
-      status: 'PACKING_QR',
-      statusLabel: 'Pembayaran Terverifikasi • Packing & Label QR',
-      courier: isPeakSeason
-        ? '3PL Segar Express (Peak Season)'
-        : 'Armada Cold-Van VC-02',
-      qrCodeResi: 'QR-WMS-' + Math.floor(10000 + Math.random() * 89999) + '-BDG',
-      paymentMethod: 'QRIS Instan (Terverifikasi)',
-      items: orderItems,
-      shippingFee,
-      total: subtotal + shippingFee,
-      podSigned: false,
-      podTimestamp: null,
-    };
-
-    setOrders((prev) => [newOrder, ...prev]);
+  const handleCheckout = async () => {
+    try {
+      await veggieApi.checkoutOrder(buyerMode, cart, isPeakSeason);
+      await refreshState();
+    } catch {
+      setProducts((prev) =>
+        prev.map((prod) => {
+          const bought = cart.find((c) => c.productId === prod.id);
+          return bought
+            ? { ...prod, stockKg: Math.max(0, prod.stockKg - bought.qty) }
+            : prod;
+        })
+      );
+    }
     setCart([]);
     notify('Pembayaran valid! Picking Ticket diterbitkan ke Gudang & Kurir.');
   };
 
-  const handleConfirmPod = (orderId: string) => {
-    const timeStr = new Date().toTimeString().slice(0, 5);
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId
-          ? {
-              ...o,
-              status: 'COMPLETED',
-              statusLabel: 'Selesai • POD Terarsip',
-              podSigned: true,
-              podTimestamp: `Hari ini, ${timeStr} WIB`,
-            }
-          : o
-      )
-    );
+  const handleConfirmPod = async (orderId: string) => {
+    try {
+      await veggieApi.confirmPod(orderId);
+      await refreshState();
+    } catch {
+      const timeStr = new Date().toTimeString().slice(0, 5);
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === orderId
+            ? {
+                ...o,
+                status: 'COMPLETED',
+                statusLabel: 'Selesai • POD Terarsip',
+                podSigned: true,
+                podTimestamp: `Hari ini, ${timeStr} WIB`,
+              }
+            : o
+        )
+      );
+    }
     notify('POD ditandatangani & pesanan selesai.');
   };
 
-  // ==================== HANDLERS: GUDANG, ML & SOURCING ====================
-  const handleDispatchSupplyPlan = (forecast: ForecastResult) => {
-    const newPlan: SupplyPlan = {
-      id: 'SPF-2026-' + Math.floor(100 + Math.random() * 899),
-      commodityId: forecast.commodityId,
-      commodityName: forecast.commodityName,
-      targetQty: forecast.recommendedRestockKg,
-      refPrice: forecast.refFarmerPrice,
-      harvestDate: '29 Nov 2026',
-      status: 'WAITING_FARMER',
-      confirmedQty: forecast.recommendedRestockKg,
-      agreedPrice: forecast.refFarmerPrice,
-    };
-    setSupplyPlans((prev) => [newPlan, ...prev]);
-    notify(`Formulir ${newPlan.id} dikirim ke Portal Petani Mitra.`);
+  // ==================== HANDLERS: GUDANG, AI & SOURCING ====================
+  const handleDispatchSupplyPlan = async (forecast: ForecastResult) => {
+    try {
+      const res = await veggieApi.dispatchSupplyPlan(forecast);
+      await refreshState();
+      notify(`Formulir ${res.id} dikirim ke Portal Petani Mitra.`);
+    } catch {
+      notify('Gagal mengirim formulir ke server.', true);
+    }
   };
 
-  const handleIssuePo = (planId: string) => {
-    const plan = supplyPlans.find((p) => p.id === planId);
-    if (!plan) return;
-
-    setSupplyPlans((prev) =>
-      prev.map((p) => (p.id === planId ? { ...p, status: 'PO_ISSUED' } : p))
-    );
-
-    const newPo: PurchaseOrder = {
-      poNumber: 'PO-VC-2026-' + Math.floor(100 + Math.random() * 899),
-      planId: plan.id,
-      commodityId: plan.commodityId,
-      commodityName: plan.commodityName,
-      qty: plan.confirmedQty,
-      agreedPrice: plan.agreedPrice,
-      totalAmount: plan.confirmedQty * plan.agreedPrice,
-      status: 'PO_ISSUED',
-    };
-
-    setPurchaseOrders((prev) => [newPo, ...prev]);
-    notify(`Purchase Order ${newPo.poNumber} diterbitkan ke Petani Mitra.`);
+  const handleIssuePo = async (planId: string) => {
+    try {
+      const res = await veggieApi.issuePurchaseOrder(planId);
+      await refreshState();
+      notify(`Purchase Order ${res.poNumber} diterbitkan ke Petani Mitra.`);
+    } catch {
+      notify('Gagal menerbitkan PO.', true);
+    }
   };
 
-  const handleSubmitQcGrading = (
+  const handleSubmitQcGrading = async (
     poNumber: string,
     gradeAKg: number,
     gradeBKg: number
   ) => {
-    const po = purchaseOrders.find((p) => p.poNumber === poNumber);
-    if (!po) return;
-
-    setProducts((prev) =>
-      prev.map((prod) => {
-        if (prod.id === po.commodityId) {
-          return { ...prod, stockKg: prod.stockKg + gradeAKg };
-        }
-        if (prod.id === 'PRD-003' && gradeBKg > 0) {
-          return { ...prod, stockKg: prod.stockKg + gradeBKg };
-        }
-        return prod;
-      })
-    );
-
-    setPurchaseOrders((prev) =>
-      prev.map((p) =>
-        p.poNumber === poNumber ? { ...p, status: 'QC_COMPLETED' } : p
-      )
-    );
-    notify(
-      `QC Selesai: +${gradeAKg}kg Grade-A & +${gradeBKg}kg Olahan Grade-B masuk stok WMS.`
-    );
+    try {
+      await veggieApi.submitQcGrading(poNumber, gradeAKg, gradeBKg);
+      await refreshState();
+      notify(
+        `QC Selesai: +${gradeAKg}kg Grade-A & +${gradeBKg}kg Olahan Grade-B masuk stok WMS.`
+      );
+    } catch {
+      notify('Gagal menyimpan hasil QC.', true);
+    }
   };
 
   const handleTogglePeakSeason = () => {
@@ -245,55 +212,39 @@ export function App() {
     });
   };
 
-  const handleAdvanceOrder = (orderId: string) => {
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== orderId) return o;
-        if (o.status === 'PACKING_QR') {
-          notify(`Resi ${o.qrCodeResi} dipindai. Kurir menuju lokasi pelanggan.`);
-          return {
-            ...o,
-            status: 'IN_TRANSIT',
-            statusLabel: 'Dikirim Kurir Berpendingin (Scan QR OK)',
-          };
-        }
-        if (o.status === 'IN_TRANSIT') {
-          notify('Kurir tiba di lokasi. Pembeli dapat menandatangani POD.');
-          return {
-            ...o,
-            status: 'ARRIVED_PENDING_POD',
-            statusLabel: 'Tiba • Menunggu Tanda Tangan POD',
-          };
-        }
-        return o;
-      })
-    );
+  const handleAdvanceOrder = async (orderId: string) => {
+    try {
+      await veggieApi.advanceOrder(orderId);
+      await refreshState();
+      notify('Status pengiriman diperbarui di sistem WMS.');
+    } catch {
+      notify('Gagal memperbarui status pengiriman.', true);
+    }
   };
 
   // ==================== HANDLERS: PETANI MITRA ====================
-  const handleConfirmSupply = (planId: string, qty: number, price: number) => {
-    setSupplyPlans((prev) =>
-      prev.map((p) =>
-        p.id === planId
-          ? {
-              ...p,
-              confirmedQty: qty,
-              agreedPrice: price,
-              status: 'CONFIRMED_BY_FARMER',
-            }
-          : p
-      )
-    );
-    notify(`Kesepakatan ${planId} dikirim ke Tim Sourcing VeggieChain.`);
+  const handleConfirmSupply = async (
+    planId: string,
+    qty: number,
+    price: number
+  ) => {
+    try {
+      await veggieApi.confirmFarmerSupply(planId, qty, price);
+      await refreshState();
+      notify(`Kesepakatan ${planId} dikirim ke Tim Sourcing VeggieChain.`);
+    } catch {
+      notify('Gagal mengonfirmasi kesepakatan.', true);
+    }
   };
 
-  const handleSendHarvestToQc = (poNumber: string) => {
-    setPurchaseOrders((prev) =>
-      prev.map((p) =>
-        p.poNumber === poNumber ? { ...p, status: 'HARVEST_SENT_TO_QC' } : p
-      )
-    );
-    notify(`Hasil panen ${poNumber} dikirim ke Hub Gudang untuk inspeksi QC.`);
+  const handleSendHarvestToQc = async (poNumber: string) => {
+    try {
+      await veggieApi.sendHarvestToQc(poNumber);
+      await refreshState();
+      notify(`Hasil panen ${poNumber} dikirim ke Hub Gudang untuk inspeksi QC.`);
+    } catch {
+      notify('Gagal memperbarui status pengiriman panen.', true);
+    }
   };
 
   const statusBarTheme =
@@ -366,6 +317,8 @@ export function App() {
             onTogglePeakSeason={handleTogglePeakSeason}
             onAdvanceOrder={handleAdvanceOrder}
             onSwitchRole={(role) => handleSwitchRole(role)}
+            onRefreshState={refreshState}
+            onNotify={notify}
           />
         )}
 
