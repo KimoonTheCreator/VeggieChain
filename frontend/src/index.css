@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.veggie-header-gradient {
+  background: linear-gradient(180deg, #98e6b8 0%, #c8f3d9 45%, #f8fafc 100%);
+}
+
+.floating-nav {
+  box-shadow: 0 -4px 24px rgba(15, 23, 42, 0.07);
+}
