@@ -5,8 +5,6 @@ import {
   Truck,
   Send,
   Sparkles,
-  PlusCircle,
-  ClipboardList,
   Boxes,
 } from 'lucide-react';
 import type {
@@ -18,7 +16,7 @@ import type {
   SupplyPlan,
   UserRole,
 } from '../../types/veggiechain';
-import { calculateLocalForecast, formatRupiah, isWeekendDate, stockUnitLabel } from '../../utils/format';
+import { calculateLocalForecast, formatRupiah, stockUnitLabel } from '../../utils/format';
 import { veggieApi } from '../../services/api';
 import { InventoryPanel } from './InventoryPanel';
 
@@ -91,23 +89,8 @@ export const OpsApp: React.FC<OpsAppProps> = ({
   const [isLoadingAi, setIsLoadingAi] = useState<boolean>(false);
   const [forecastTrigger, setForecastTrigger] = useState<number>(0);
 
-  const [showManualInput, setShowManualInput] = useState<boolean>(false);
-  const [manualB2c, setManualB2c] = useState<number>(15);
-  const [manualB2b, setManualB2b] = useState<number>(25);
-  const [manualDate, setManualDate] = useState<string>(
-    new Date().toISOString().slice(0, 10)
-  );
-  const [manualWeather, setManualWeather] = useState<
-    'cerah' | 'hujan_sedang' | 'hujan_lebat'
-  >('hujan_lebat');
-  const [manualStockInput, setManualStockInput] = useState<string>('');
-
   const selectedProduct =
     products.find((p) => p.id === selectedCommodityId) ?? products[0] ?? EMPTY_PRODUCT;
-
-  useEffect(() => {
-    setManualStockInput(String(selectedProduct.stockKg));
-  }, [selectedProduct.id, selectedProduct.stockKg]);
 
   const fallbackForecast = calculateLocalForecast(
     selectedProduct,
@@ -121,11 +104,30 @@ export const OpsApp: React.FC<OpsAppProps> = ({
 
   const forecast = aiForecast || fallbackForecast;
 
+  // Rekomendasi pengadaan boleh dikoreksi Ops (mis. ada pembeli besar yang belum
+  // tercatat). Nilai awal selalu mengikuti hasil prediksi, lalu bisa diubah.
+  const [restockInput, setRestockInput] = useState<string>(
+    String(fallbackForecast.recommendedRestockKg)
+  );
+
+  useEffect(() => {
+    setRestockInput(String(forecast.recommendedRestockKg));
+  }, [selectedCommodityId, forecast.recommendedRestockKg]);
+
+  const restockParsed = Number(restockInput);
+  const isRestockValid =
+    restockInput.trim() !== '' &&
+    Number.isInteger(restockParsed) &&
+    restockParsed >= 0;
+  const restockQty = isRestockValid ? restockParsed : forecast.recommendedRestockKg;
+  const restockEdited = restockQty !== forecast.recommendedRestockKg;
+
   // Riwayat penjualan diambil dari /state, bukan dari respons AI, supaya
   // pembelian pembeli langsung terlihat setelah refreshState tanpa menunggu
   // DeepSeek selesai (atau tetap tampil kalau AI gagal).
-  const recentHistory = salesHistory
+  const recentHistory = [...salesHistory]
     .filter((row) => row.commodity_id === selectedProduct.id)
+    .sort((a, b) => b.recorded_date.localeCompare(a.recorded_date))
     .slice(0, 5);
   const historyRows =
     recentHistory.length > 0 ? recentHistory : forecast.recentHistory ?? [];
@@ -154,39 +156,6 @@ export const OpsApp: React.FC<OpsAppProps> = ({
       cancelled = true;
     };
   }, [selectedCommodityId, weatherCondition, isHolidayWeek, products, forecastTrigger]);
-
-  const handleSaveManualSales = async () => {
-    try {
-      await veggieApi.addSalesHistory({
-        commodityId: selectedCommodityId,
-        recordedDate: manualDate,
-        soldB2cKg: manualB2c,
-        soldB2bKg: manualB2b,
-        weatherCondition: manualWeather,
-        isWeekend: isWeekendDate(manualDate),
-      });
-      setForecastTrigger((prev) => prev + 1);
-      setShowManualInput(false);
-      onNotify(
-        `Rekam penjualan ${manualB2c + manualB2b} kg berhasil disimpan & prediksi diperbarui.`
-      );
-    } catch {
-      onNotify('Gagal menyimpan data penjualan. Periksa koneksi server.', true);
-    }
-  };
-
-  const handleUpdateStockManual = async () => {
-    const newVal = Math.max(0, parseInt(manualStockInput, 10) || 0);
-    try {
-      await veggieApi.updateProductStock(selectedCommodityId, newVal);
-      await onRefreshState();
-      onNotify(
-        `Stok aktual ${selectedProduct.name} diperbarui menjadi ${newVal} ${stockUnitLabel(selectedProduct.unit)}.`
-      );
-    } catch {
-      onNotify('Gagal memperbarui stok gudang.', true);
-    }
-  };
 
   const pendingQcPo = purchaseOrders.find(
     (po) => po.status === 'HARVEST_SENT_TO_QC'
@@ -287,27 +256,6 @@ export const OpsApp: React.FC<OpsAppProps> = ({
                 </p>
               </div>
 
-              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/70 flex items-center justify-between gap-2">
-                <div className="flex-1">
-                  <label className="block text-[10px] font-bold text-slate-500">
-                    Stok Fisik Gudang Saat Ini ({stockUnitLabel(selectedProduct.unit)})
-                  </label>
-                  <input
-                    type="number"
-                    value={manualStockInput}
-                    onChange={(e) => setManualStockInput(e.target.value)}
-                    className="w-full mt-0.5 bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-900"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={handleUpdateStockManual}
-                  className="px-3 py-2 rounded-lg bg-slate-800 text-white text-[11px] font-bold self-end cursor-pointer"
-                >
-                  Ubah Stok
-                </button>
-              </div>
-
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 mb-1">
@@ -363,92 +311,6 @@ export const OpsApp: React.FC<OpsAppProps> = ({
                   </button>
                 </div>
               </div>
-
-              <div className="pt-1 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setShowManualInput((prev) => !prev)}
-                  className="w-full py-2 px-3 rounded-xl bg-emerald-50 text-[#117a37] border border-emerald-200/80 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <PlusCircle className="w-3.5 h-3.5" />
-                  <span>
-                    {showManualInput
-                      ? 'Tutup Form Penjualan'
-                      : '+ Catat Penjualan Harian Baru'}
-                  </span>
-                </button>
-
-                {showManualInput && (
-                  <div className="mt-3 bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2.5 text-xs">
-                    <p className="font-bold text-slate-800 flex items-center gap-1.5">
-                      <ClipboardList className="w-3.5 h-3.5 text-[#117a37]" />
-                      Input Rekam Penjualan ({selectedProduct.name})
-                    </p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500">
-                          Terjual Eceran B2C (kg)
-                        </label>
-                        <input
-                          type="number"
-                          value={manualB2c}
-                          onChange={(e) => setManualB2c(Number(e.target.value) || 0)}
-                          className="w-full bg-white border border-slate-200 rounded-lg p-1.5 font-bold"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500">
-                          Terjual Mitra B2B (kg)
-                        </label>
-                        <input
-                          type="number"
-                          value={manualB2b}
-                          onChange={(e) => setManualB2b(Number(e.target.value) || 0)}
-                          className="w-full bg-white border border-slate-200 rounded-lg p-1.5 font-bold"
-                        />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500">
-                          Tanggal Transaksi
-                        </label>
-                        <input
-                          type="date"
-                          value={manualDate}
-                          onChange={(e) => setManualDate(e.target.value)}
-                          className="w-full bg-white border border-slate-200 rounded-lg p-1.5 font-semibold"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500">
-                          Cuaca Saat Itu
-                        </label>
-                        <select
-                          value={manualWeather}
-                          onChange={(e) =>
-                            setManualWeather(
-                              e.target.value as 'cerah' | 'hujan_sedang' | 'hujan_lebat'
-                            )
-                          }
-                          className="w-full bg-white border border-slate-200 rounded-lg p-1.5 font-semibold"
-                        >
-                          <option value="cerah">Cerah</option>
-                          <option value="hujan_sedang">Hujan Sedang</option>
-                          <option value="hujan_lebat">Hujan Lebat</option>
-                        </select>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleSaveManualSales}
-                      className="w-full py-2 rounded-lg bg-[#117a37] text-white font-bold text-xs cursor-pointer"
-                    >
-                      Simpan Data & Perbarui Prediksi
-                    </button>
-                  </div>
-                )}
-              </div>
             </div>
 
             <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm space-y-3.5">
@@ -463,14 +325,12 @@ export const OpsApp: React.FC<OpsAppProps> = ({
                 </div>
                 <span
                   className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                    forecast.isRestockNeeded
+                    restockQty > 0
                       ? 'bg-amber-100 text-amber-800'
                       : 'bg-emerald-100 text-emerald-800'
                   }`}
                 >
-                  {forecast.isRestockNeeded
-                    ? 'Perlu Tambah Stok'
-                    : 'Stok Mencukupi'}
+                  {restockQty > 0 ? 'Perlu Tambah Stok' : 'Stok Mencukupi'}
                 </span>
               </div>
 
@@ -601,29 +461,71 @@ export const OpsApp: React.FC<OpsAppProps> = ({
                 </div>
               </div>
 
-              <div className="bg-slate-50 rounded-xl p-3 border border-slate-200/70 flex items-center justify-between text-xs">
-                <span className="text-slate-600 font-medium">
-                  Rekomendasi Pengadaan:
-                </span>
-                <span className="font-extrabold text-slate-900 tabular-nums">
-                  {forecast.isRestockNeeded
-                    ? `+${forecast.recommendedRestockKg} kg`
-                    : '0 kg (Aman)'}
-                </span>
+              <div className="bg-slate-50 rounded-xl p-3 border border-slate-200/70 text-xs space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-600 font-medium">
+                    Rekomendasi Pengadaan
+                  </span>
+                  <span className="text-[10px] text-slate-400">
+                    AI: {forecast.recommendedRestockKg} kg
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={restockInput}
+                    onChange={(e) => setRestockInput(e.target.value)}
+                    aria-label="Jumlah rekomendasi pengadaan (kg)"
+                    className={`flex-1 bg-white border rounded-lg px-2.5 py-2 font-extrabold text-slate-900 tabular-nums focus:outline-none focus:border-[#117a37] ${
+                      isRestockValid
+                        ? 'border-slate-200'
+                        : 'border-rose-300 text-rose-700'
+                    }`}
+                  />
+                  <span className="text-[11px] font-bold text-slate-500">kg</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setRestockInput(String(forecast.recommendedRestockKg))
+                    }
+                    disabled={!restockEdited}
+                    className="px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    Reset AI
+                  </button>
+                </div>
+                <p className="text-[10px] leading-relaxed text-slate-500">
+                  {!isRestockValid
+                    ? 'Isi bilangan bulat 0 atau lebih.'
+                    : restockEdited
+                      ? `Diubah manual dari rekomendasi AI (${forecast.recommendedRestockKg} kg).`
+                      : 'Sesuai prediksi AI.'}
+                </p>
               </div>
 
-              {forecast.isRestockNeeded ? (
+              {restockQty > 0 ? (
                 <button
                   type="button"
-                  onClick={() => onDispatchSupplyPlan(forecast)}
-                  className="w-full py-3 rounded-xl bg-[#117a37] hover:bg-emerald-800 text-white font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer"
+                  onClick={() =>
+                    onDispatchSupplyPlan({
+                      ...forecast,
+                      recommendedRestockKg: restockQty,
+                      isRestockNeeded: true,
+                    })
+                  }
+                  disabled={!isRestockValid}
+                  className="w-full py-3 rounded-xl bg-[#117a37] hover:bg-emerald-800 text-white font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Send className="w-3.5 h-3.5" />
                   <span>Buat Jadwal & Kirim Form ke Petani</span>
                 </button>
               ) : (
                 <p className="text-[11px] text-center text-slate-400">
-                  Stok gudang pendingin mencukupi untuk proyeksi minggu depan.
+                  {isRestockValid
+                    ? 'Stok gudang pendingin mencukupi untuk proyeksi minggu depan.'
+                    : 'Perbaiki jumlah rekomendasi pengadaan terlebih dahulu.'}
                 </p>
               )}
             </div>

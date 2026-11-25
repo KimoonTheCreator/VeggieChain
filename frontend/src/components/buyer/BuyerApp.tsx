@@ -340,28 +340,6 @@ export const BuyerApp: React.FC<BuyerAppProps> = ({
               </div>
             </div>
 
-            {/* Banner Cold Storage */}
-            <div className="px-5 mb-5">
-              <div className="bg-emerald-900 text-white rounded-2xl p-3.5 flex items-center justify-between shadow-sm">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-emerald-800 flex items-center justify-center text-emerald-300 shrink-0">
-                    <Snowflake className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-emerald-100">
-                      Stok Cold Storage Real-Time
-                    </p>
-                    <p className="text-[11px] text-emerald-300/90">
-                      Suhu Hub Lembang: 4°C • Lulus Inspeksi QC
-                    </p>
-                  </div>
-                </div>
-                <span className="px-2 py-1 rounded-lg bg-emerald-700/80 text-[10px] font-bold text-emerald-200">
-                  LIVE
-                </span>
-              </div>
-            </div>
-
             {/* Header Section */}
             <div className="px-5 flex items-center justify-between mb-3">
               <div>
