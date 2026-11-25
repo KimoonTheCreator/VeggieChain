@@ -80,8 +80,19 @@ export const veggieApi = {
     return request(`/orders/${orderId}/advance`, json('PATCH'));
   },
 
-  async confirmPod(orderId: string) {
-    return request(`/orders/${orderId}/pod`, json('POST'));
+  async setPeakSeason(enabled: boolean) {
+    return request('/settings/peak-season', json('PATCH', { enabled }));
+  },
+
+  async confirmPod(orderId: string, signatureDataUrl?: string) {
+    return request(
+      `/orders/${orderId}/pod`,
+      json('POST', signatureDataUrl ? { signatureDataUrl } : {})
+    );
+  },
+
+  async requestOrderReturn(orderId: string, reason?: string) {
+    return request(`/orders/${orderId}/return`, json('POST', { reason }));
   },
 
   async dispatchSupplyPlan(forecast: ForecastResult) {

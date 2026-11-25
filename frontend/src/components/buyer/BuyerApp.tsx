@@ -39,7 +39,8 @@ interface BuyerAppProps {
   onAddToCart: (productId: string, qty?: number) => void;
   onUpdateCartQty: (productId: string, delta: number) => void;
   onCheckout: () => void;
-  onConfirmPod: (orderId: string) => void;
+  onConfirmPod: (orderId: string, signatureDataUrl?: string) => void;
+  onRequestReturn: (orderId: string, reason?: string) => void;
   onSwitchRole: (role: UserRole, subTab?: string) => void;
   onNotify: (msg: string, isWarning?: boolean) => void;
 }
@@ -57,6 +58,7 @@ export const BuyerApp: React.FC<BuyerAppProps> = ({
   onUpdateCartQty,
   onCheckout,
   onConfirmPod,
+  onRequestReturn,
   onSwitchRole,
   onNotify,
 }) => {
@@ -161,7 +163,8 @@ export const BuyerApp: React.FC<BuyerAppProps> = ({
       onNotify('Mohon bubuhkan tanda tangan terlebih dahulu.', true);
       return;
     }
-    onConfirmPod(podOrder.id);
+    const signatureDataUrl = canvasRef.current?.toDataURL('image/png');
+    onConfirmPod(podOrder.id, signatureDataUrl);
     setPodOrder(null);
     setHasSigned(false);
   };
@@ -580,6 +583,10 @@ export const BuyerApp: React.FC<BuyerAppProps> = ({
                           >
                             Lihat Bukti POD
                           </button>
+                        ) : order.status === 'RETURN_REQUESTED' ? (
+                          <span className="px-3 py-2 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 text-xs font-bold">
+                            Retur QC Diproses
+                          </span>
                         ) : (
                           <button
                             type="button"
@@ -1150,6 +1157,18 @@ export const BuyerApp: React.FC<BuyerAppProps> = ({
                   <p className="text-emerald-800">
                     Waktu Serah Terima: <strong>{podOrder.podTimestamp}</strong>
                   </p>
+                  {podOrder.podSignatureData && (
+                    <div className="pt-2">
+                      <p className="text-[10px] font-bold text-emerald-700 mb-1">
+                        Arsip Tanda Tangan Digital:
+                      </p>
+                      <img
+                        src={podOrder.podSignatureData}
+                        alt="Tanda tangan POD"
+                        className="w-full h-24 object-contain bg-white rounded-xl border border-emerald-200 p-1"
+                      />
+                    </div>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -1197,8 +1216,12 @@ export const BuyerApp: React.FC<BuyerAppProps> = ({
                   <button
                     type="button"
                     onClick={() => {
+                      const targetId = podOrder.id;
                       setPodOrder(null);
-                      onNotify('Klaim retur QC dicatat ke tim gudang.', true);
+                      onRequestReturn(
+                        targetId,
+                        'Klaim mutu / ketidaksesuaian QC saat serah terima'
+                      );
                     }}
                     className="py-3 rounded-2xl bg-rose-50 text-rose-700 border border-rose-200 font-bold text-xs cursor-pointer"
                   >

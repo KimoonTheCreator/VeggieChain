@@ -41,17 +41,18 @@ Tanpa `DEEPSEEK_API_KEY`, prediksi permintaan otomatis memakai fallback statisti
   komponen dan tidak bisa diubah manual; checkout paket otomatis memotong stok
   komponen segar.
 
-### Audit QC (opsional)
+### Migrasi Database Supabase (Wajib)
 
-Kalau ingin menyimpan split Grade-A/Grade-B per PO, jalankan sekali di SQL
-Editor Supabase:
+Jalankan sekali isi file
+`supabase/migrations/20261125_001_schema_hardening_and_rpcs.sql` di **SQL Editor
+Supabase**. Migrasi ini bersifat idempoten (aman dijalankan ulang tanpa
+menghapus data yang sudah ada) dan menambahkan:
 
-```sql
-alter table public.purchase_orders
-  add column if not exists grade_a_kg numeric,
-  add column if not exists grade_b_kg numeric,
-  add column if not exists grade_b_pouches numeric,
-  add column if not exists qc_completed_at timestamptz;
-```
-
-Tanpa kolom ini QC tetap berjalan; audit hanya dicatat di log server.
+- Constraint integritas (`NOT NULL`, `UNIQUE`, `CHECK`, `bigint` untuk nominal,
+  dan trigger `updated_at`)
+- Kolom audit QC pada `purchase_orders`, arsip tanda tangan & `timestamptz` POD
+  pada `orders`, serta tabel `stock_movements`, `app_settings`, dan
+  `order_returns`
+- Row Level Security (RLS) pada seluruh tabel publik
+- Fungsi RPC atomik (`checkout_order`, `issue_purchase_order`,
+  `complete_qc_grading`, `adjust_product_stock`, `sync_bundle_stock`)

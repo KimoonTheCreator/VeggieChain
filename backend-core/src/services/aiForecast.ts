@@ -94,13 +94,17 @@ export async function generateAiDemandForecast(input: ForecastInput) {
 
   // 2. Ambil 14 catatan penjualan terbaru dari Supabase (termasuk hasil checkout
   //    otomatis maupun input manual), lalu pisahkan transaksi one-off.
-  const { data: historyData } = await supabase
+  const { data: historyData, error: historyErr } = await supabase
     .from('sales_history')
     .select('id, recorded_date, sold_b2c_kg, sold_b2b_kg, total_demand_kg, weather_condition, is_weekend')
     .eq('commodity_id', input.commodityId)
     .order('recorded_date', { ascending: false })
     .order('id', { ascending: false })
     .limit(14);
+
+  if (historyErr) {
+    throw new Error(`Gagal mengambil riwayat penjualan ${input.commodityId}: ${historyErr.message}`);
+  }
 
   const historyRows = (historyData ?? []) as SalesHistoryRow[];
   const { baselineRows, oneOffRows, thresholdKg } = splitOneOffRows(historyRows);

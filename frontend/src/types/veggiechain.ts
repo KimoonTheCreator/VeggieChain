@@ -28,20 +28,25 @@ export interface CartItem {
 }
 
 export interface OrderItem {
+  productId?: string;
   name: string;
   qty: number;
   price: number;
+  unit?: string;
 }
 
 export type OrderStatus =
   | 'PACKING_QR'
   | 'IN_TRANSIT'
   | 'ARRIVED_PENDING_POD'
-  | 'COMPLETED';
+  | 'COMPLETED'
+  | 'RETURN_REQUESTED'
+  | 'CANCELLED';
 
 export interface Order {
   id: string;
   date: string;
+  buyerMode?: BuyerMode;
   status: OrderStatus;
   statusLabel: string;
   courier: string;
@@ -52,6 +57,9 @@ export interface Order {
   total: number;
   podSigned: boolean;
   podTimestamp: string | null;
+  podSignatureData?: string | null;
+  returnRequested?: boolean;
+  returnReason?: string | null;
 }
 
 export interface SupplyPlan {
@@ -75,6 +83,10 @@ export interface PurchaseOrder {
   agreedPrice: number;
   totalAmount: number;
   status: 'PO_ISSUED' | 'HARVEST_SENT_TO_QC' | 'QC_COMPLETED';
+  gradeAKg?: number | null;
+  gradeBKg?: number | null;
+  gradeBPouches?: number | null;
+  qcCompletedAt?: string | null;
 }
 
 export interface DailyForecastPoint {

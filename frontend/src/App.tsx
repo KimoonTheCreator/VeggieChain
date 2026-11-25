@@ -66,6 +66,7 @@ export function App() {
       if (data.supplyPlans) setSupplyPlans(data.supplyPlans);
       if (data.purchaseOrders) setPurchaseOrders(data.purchaseOrders);
       if (data.salesHistory) setSalesHistory(data.salesHistory);
+      if (typeof data.isPeakSeason === 'boolean') setIsPeakSeason(data.isPeakSeason);
     } catch (err) {
       // Jangan diam saja: tanpa ini, UI tampak normal memakai data mock.
       notify(
@@ -180,14 +181,27 @@ export function App() {
     }
   };
 
-  const handleConfirmPod = async (orderId: string) => {
+  const handleConfirmPod = async (orderId: string, signatureDataUrl?: string) => {
     try {
-      await veggieApi.confirmPod(orderId);
+      await veggieApi.confirmPod(orderId, signatureDataUrl);
       await refreshState();
       notify('POD ditandatangani & pesanan selesai.');
     } catch (err) {
       notify(
         `Gagal menandatangani POD: ${err instanceof Error ? err.message : 'tidak diketahui'}`,
+        true
+      );
+    }
+  };
+
+  const handleRequestOrderReturn = async (orderId: string, reason?: string) => {
+    try {
+      await veggieApi.requestOrderReturn(orderId, reason);
+      await refreshState();
+      notify('Klaim retur QC berhasil dicatat ke sistem gudang.');
+    } catch (err) {
+      notify(
+        `Gagal mengajukan retur QC: ${err instanceof Error ? err.message : 'tidak diketahui'}`,
         true
       );
     }
@@ -199,8 +213,11 @@ export function App() {
       const res = await veggieApi.dispatchSupplyPlan(forecast);
       await refreshState();
       notify(`Formulir ${res.id} dikirim ke Portal Petani Mitra.`);
-    } catch {
-      notify('Gagal mengirim formulir ke server.', true);
+    } catch (err) {
+      notify(
+        `Gagal mengirim formulir: ${err instanceof Error ? err.message : 'tidak diketahui'}`,
+        true
+      );
     }
   };
 
@@ -209,8 +226,11 @@ export function App() {
       const res = await veggieApi.issuePurchaseOrder(planId);
       await refreshState();
       notify(`Purchase Order ${res.poNumber} diterbitkan ke Petani Mitra.`);
-    } catch {
-      notify('Gagal menerbitkan PO.', true);
+    } catch (err) {
+      notify(
+        `Gagal menerbitkan PO: ${err instanceof Error ? err.message : 'tidak diketahui'}`,
+        true
+      );
     }
   };
 
@@ -230,21 +250,30 @@ export function App() {
       notify(
         `QC Selesai: +${gradeAKg} kg Grade-A & +${pouches} pouch Grade-B (${gradeBKg} kg olahan) masuk stok WMS.`
       );
-    } catch {
-      notify('Gagal menyimpan hasil QC.', true);
+    } catch (err) {
+      notify(
+        `Gagal menyimpan hasil QC: ${err instanceof Error ? err.message : 'tidak diketahui'}`,
+        true
+      );
     }
   };
 
-  const handleTogglePeakSeason = () => {
-    setIsPeakSeason((prev) => {
-      const next = !prev;
+  const handleTogglePeakSeason = async () => {
+    const next = !isPeakSeason;
+    try {
+      await veggieApi.setPeakSeason(next);
+      setIsPeakSeason(next);
       notify(
         next
           ? 'Peak Season Aktif: Pesanan baru dialihkan ke armada 3PL.'
           : 'Mode Normal: Menggunakan armada Cold-Van internal.'
       );
-      return next;
-    });
+    } catch (err) {
+      notify(
+        `Gagal menyimpan mode Peak Season: ${err instanceof Error ? err.message : 'tidak diketahui'}`,
+        true
+      );
+    }
   };
 
   const handleAdvanceOrder = async (orderId: string) => {
@@ -252,8 +281,11 @@ export function App() {
       await veggieApi.advanceOrder(orderId);
       await refreshState();
       notify('Status pengiriman diperbarui di sistem WMS.');
-    } catch {
-      notify('Gagal memperbarui status pengiriman.', true);
+    } catch (err) {
+      notify(
+        `Gagal memperbarui status: ${err instanceof Error ? err.message : 'tidak diketahui'}`,
+        true
+      );
     }
   };
 
@@ -267,8 +299,11 @@ export function App() {
       await veggieApi.confirmFarmerSupply(planId, qty, price);
       await refreshState();
       notify(`Kesepakatan ${planId} dikirim ke Tim Sourcing VeggieChain.`);
-    } catch {
-      notify('Gagal mengonfirmasi kesepakatan.', true);
+    } catch (err) {
+      notify(
+        `Gagal mengonfirmasi kesepakatan: ${err instanceof Error ? err.message : 'tidak diketahui'}`,
+        true
+      );
     }
   };
 
@@ -277,8 +312,11 @@ export function App() {
       await veggieApi.sendHarvestToQc(poNumber);
       await refreshState();
       notify(`Hasil panen ${poNumber} dikirim ke Hub Gudang untuk inspeksi QC.`);
-    } catch {
-      notify('Gagal memperbarui status pengiriman panen.', true);
+    } catch (err) {
+      notify(
+        `Gagal mengirim hasil panen: ${err instanceof Error ? err.message : 'tidak diketahui'}`,
+        true
+      );
     }
   };
 
@@ -333,6 +371,7 @@ export function App() {
             onUpdateCartQty={handleUpdateCartQty}
             onCheckout={handleCheckout}
             onConfirmPod={handleConfirmPod}
+            onRequestReturn={handleRequestOrderReturn}
             onSwitchRole={handleSwitchRole}
             onNotify={notify}
           />
