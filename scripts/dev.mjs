@@ -93,3 +93,37 @@ console.log(`${useColor}\x1b[1mVeggieChain dev\x1b[0m`);
 console.log('  backend  → http://localhost:3000');
 console.log('  frontend → http://localhost:5173');
 console.log('  Ctrl+C untuk menghentikan keduanya.\n');
+
+// Pantau kesiapan backend. Penting karena `tsx watch` tetap hidup walau kode
+// gagal start (mis. .env belum ada), sehingga tanpa ini kegagalannya hanya
+// terlihat sebagai "http proxy error: connect ECONNREFUSED 127.0.0.1:3000".
+const startedAt = Date.now();
+let backendReady = false;
+const readinessTimer = setInterval(async () => {
+  if (shuttingDown || backendReady) {
+    clearInterval(readinessTimer);
+    return;
+  }
+  try {
+    const res = await fetch('http://127.0.0.1:3000/health');
+    // Jangan hanya cek status 2xx: pastikan benar-benar endpoint VeggieChain.
+    const body = res.ok ? await res.json().catch(() => null) : null;
+    if (body?.status === 'ok') {
+      backendReady = true;
+      clearInterval(readinessTimer);
+      console.log('\x1b[32m[dev]\x1b[0m backend siap di http://localhost:3000');
+    }
+  } catch {
+    // belum siap, coba lagi
+  }
+  if (!backendReady && Date.now() - startedAt > 20_000) {
+    clearInterval(readinessTimer);
+    console.error(
+      '\x1b[33m[dev]\x1b[0m backend belum merespons di :3000 setelah 20 detik.\n' +
+        '      Cek baris "backend │" di atas. Penyebab umum:\n' +
+        '        • backend-core/.env belum ada atau isinya kosong\n' +
+        '        • dependency backend-core belum dipasang (npm install)\n' +
+        '        • port 3000 dipakai proses lain'
+    );
+  }
+}, 1000);
