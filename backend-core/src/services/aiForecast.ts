@@ -19,6 +19,33 @@ type SalesHistoryRow = {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+/**
+ * Buang kalimat pada aiInsight yang mengulang informasi yang sudah tampil di
+ * panel lain (angka apa pun) atau memakai istilah teknis. Tujuannya: kartu
+ * rekomendasi hanya berisi saran tindakan yang belum ada di UI.
+ */
+const REDUNDANT_INSIGHT_PATTERNS = [
+  /one[-\s]?off/i,
+  /\bbaseline\b/i,
+  /\bmultiplier\b/i,
+  /\bpengali\b/i,
+  /dailySeries/i,
+  /transaksi[^.]*\bdiabaikan\b/i,
+  /\d/, // semua angka sudah ditampilkan di panel lain (stok, prediksi, nominal)
+];
+
+function stripRedundantInsight(text: string): string {
+  const sentences = text
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  return sentences
+    .filter((sentence) => !REDUNDANT_INSIGHT_PATTERNS.some((re) => re.test(sentence)))
+    .join(' ')
+    .trim();
+}
+
 function median(values: number[]): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -132,7 +159,16 @@ export async function generateAiDemandForecast(input: ForecastInput) {
             {
               role: 'system',
               content:
-                'Anda adalah layanan mikro StockPrediction (AI Demand Forecasting) pada sistem rantai pasok pertanian VeggieChain. Analisis data historis penjualan B2C & B2B dari database untuk memproyeksikan permintaan harian (kg) selama 7 hari ke depan (Rab, Kam, Jum, Sab, Min, Sen, Sel). Berikan bobot lebih besar pada catatan penjualan terbaru yang diinput pengguna, lonjakan akhir pekan (Jum-Min), kondisi cuaca, dan catatan lapangan. ATURAN PENTING: transaksi one-off (pembelian bulk/sekali besar) pada field transaksi_one_off_diabaikan SUDAH dikeluarkan dari data_historis_baseline dan TIDAK BOLEH ditambahkan ke proyeksi; prediksi harus berbasis baseline_harian_kg. Total dailySeries harus berada dalam rentang 0.9-1.1 x (baseline_harian_kg x 7 x multiplier cuaca x multiplier libur). Balas HANYA dengan objek JSON valid tanpa penjelasan tambahan, dengan bentuk tepat seperti ini: {"dailySeries":[{"dayLabel":"Rab","demandKg":0},{"dayLabel":"Kam","demandKg":0},{"dayLabel":"Jum","demandKg":0},{"dayLabel":"Sab","demandKg":0},{"dayLabel":"Min","demandKg":0},{"dayLabel":"Sen","demandKg":0},{"dayLabel":"Sel","demandKg":0}],"aiInsight":"ringkasan analisis singkat dalam Bahasa Indonesia"}.',
+                'Anda adalah layanan mikro StockPrediction (AI Demand Forecasting) pada sistem rantai pasok pertanian VeggieChain. ' +
+                'Tugas: proyeksikan permintaan harian (kg) selama 7 hari ke depan (Rab, Kam, Jum, Sab, Min, Sen, Sel) dari data penjualan B2C & B2B. ' +
+                'Gunakan baseline_harian_kg sebagai dasar, pertimbangkan data terbaru, lonjakan akhir pekan (Jum-Min), cuaca, dan catatan lapangan. ' +
+                'Transaksi one-off pada field transaksi_one_off_diabaikan SUDAH dikeluarkan dari data_historis_baseline dan TIDAK BOLEH ditambahkan ke proyeksi. ' +
+                'Total dailySeries harus berada dalam rentang 0.9-1.1 x (baseline_harian_kg x 7 x faktor cuaca x faktor libur). ' +
+                'Untuk aiInsight, tulis 2-3 kalimat rekomendasi operasional dalam Bahasa Indonesia yang sederhana dan langsung bisa ditindaklanjuti. ' +
+                'Jangan menulis angka apa pun dan jangan mengulang data yang sudah tampil di panel lain (stok, prediksi, buffer, rekomendasi tambah pasokan, nominal transaksi besar). ' +
+                'Jangan memakai istilah teknis seperti baseline, multiplier, pengali, one-off, dailySeries, atau rumus persentase. ' +
+                'Fokus pada tindakan dan waktu: perlu tambah pasokan atau tidak, kapan mulai bersiap, dan apa yang harus dijaga (misalnya pasokan akhir pekan atau libur panjang). ' +
+                'Balas HANYA dengan objek JSON valid tanpa penjelasan tambahan, dengan bentuk tepat seperti ini: {"dailySeries":[{"dayLabel":"Rab","demandKg":0},{"dayLabel":"Kam","demandKg":0},{"dayLabel":"Jum","demandKg":0},{"dayLabel":"Sab","demandKg":0},{"dayLabel":"Min","demandKg":0},{"dayLabel":"Sen","demandKg":0},{"dayLabel":"Sel","demandKg":0}],"aiInsight":"rekomendasi singkat dalam Bahasa Indonesia"}.',
             },
             {
               role: 'user',
@@ -163,9 +199,7 @@ export async function generateAiDemandForecast(input: ForecastInput) {
         }));
         predictedDemandKg = dailySeries.reduce((sum, item) => sum + item.demandKg, 0);
         aiModel = result?.model || modelName;
-        aiInsight =
-          parsed.aiInsight ||
-          'Proyeksi DeepSeek AI memperhitungkan tren penjualan terbaru di database, faktor cuaca, dan pola akhir pekan.';
+        aiInsight = typeof parsed.aiInsight === 'string' ? parsed.aiInsight : '';
       }
     } catch (err) {
       console.error('Error memanggil DeepSeek API:', err);
@@ -190,13 +224,23 @@ export async function generateAiDemandForecast(input: ForecastInput) {
       dayLabel,
       demandKg: Math.max(1, Math.round(predictedDemandKg * weights[idx])),
     }));
-    aiInsight =
-      'Menggunakan kalkulasi rata-rata historis Supabase (pastikan DEEPSEEK_API_KEY di backend-core/.env sudah valid untuk mengaktifkan DeepSeek AI).';
+    // Insight disusun setelah angka restock diketahui (lihat fallbackInsight).
+    aiInsight = '';
   }
-
   const safetyBufferKg = Math.round(predictedDemandKg * 0.15);
   const totalRequiredKg = predictedDemandKg + safetyBufferKg;
   const recommendedRestockKg = Math.max(0, totalRequiredKg - product.stock_kg);
+
+  // Rekomendasi harus berupa tindakan, bukan pengulangan angka di panel lain.
+  const fallbackInsight =
+    recommendedRestockKg > 0
+      ? `Stok diperkirakan kurang untuk sepekan ke depan. Segera siapkan tambahan pasokan dari petani mitra${
+          input.isHolidayWeek ? ', lebih awal karena ada libur panjang' : ''
+        }, terutama menjelang akhir pekan.`
+      : 'Stok masih cukup untuk sepekan ke depan, jadi belum perlu menambah pasokan. Pastikan panen dan pengiriman siap menjelang akhir pekan (Jumat–Minggu).';
+
+  const cleanedInsight = stripRedundantInsight(aiInsight);
+  aiInsight = cleanedInsight.length > 0 ? cleanedInsight : fallbackInsight;
 
   return {
     commodityId: product.id,
