@@ -497,6 +497,20 @@ export const OpsApp: React.FC<OpsAppProps> = ({
                 </div>
               )}
 
+              {(forecast.oneOffExcludedKg ?? 0) > 0 && (
+                <div className="bg-amber-50 border border-amber-200/80 rounded-xl p-3 text-[11px] text-amber-900">
+                  <p className="font-bold mb-0.5">
+                    {forecast.oneOffExcludedCount ?? 1} transaksi one-off diabaikan
+                  </p>
+                  <p className="leading-relaxed">
+                    {Number(forecast.oneOffExcludedKg).toLocaleString('id-ID')} kg pembelian
+                    bulk tidak dihitung sebagai baseline harian (baseline tetap{' '}
+                    {forecast.baselineDailyKg ?? '-'} kg/hari). Stok tetap berkurang, sehingga
+                    kebutuhan restock mengikuti stok aktual.
+                  </p>
+                </div>
+              )}
+
               {forecast.recentHistory && forecast.recentHistory.length > 0 && (
                 <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-200/70">
                   <p className="text-[10px] font-bold text-slate-500 mb-1.5">

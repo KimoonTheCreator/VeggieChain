@@ -51,6 +51,15 @@ function toNumber(value: unknown, field: string, { min = 0 } = {}): number {
 
 const pad3 = () => String(randomInt(0, 1000)).padStart(3, '0');
 const ymd = (d = new Date()) => d.toISOString().slice(0, 10).replace(/-/g, '');
+const isoDate = (d = new Date()) => d.toISOString().slice(0, 10);
+
+/** Weekend versi bisnis VeggieChain: Jumat, Sabtu, Minggu. */
+function isWeekendIso(iso: string): boolean {
+  const [year, month, day] = iso.split('-').map(Number);
+  if (!year || !month || !day) return false;
+  const dow = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  return dow === 0 || dow === 5 || dow === 6;
+}
 
 const MONTHS_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 function formatHarvestDate(daysAhead = 4): string {
@@ -76,6 +85,76 @@ async function insertWithRetry(
     console.warn(`[Supabase] ${what}: ID ${row[idField]} bentrok, ulangi (${attempt}/5)`);
   }
   throw new HTTPException(503, { message: `${what} gagal: tidak dapat membuat ID unik` });
+}
+
+/**
+ * Catat penjualan checkout ke `sales_history` sebagai agregat 1 baris per
+ * (komoditas, tanggal) — sumber data yang dibaca demand forecasting.
+ *
+ * Dipanggil SETELAH order tersimpan & stok terpotong. Kegagalan di sini hanya
+ * di-log: order yang sudah sah tidak boleh ikut dibatalkan gara-gara tabel
+ * analitik. Penulisan bersifat read-modify-write; cukup untuk beban demo
+ * (satu operator), dan aman dari duplikasi karena selalu di-upsert per tanggal.
+ */
+async function recordSalesFromOrder(
+  entries: Array<{ commodityId: string; qty: number }>,
+  buyerMode: 'B2C' | 'B2B'
+): Promise<{ recorded: number; failed: number }> {
+  const recordedDate = isoDate();
+  let recorded = 0;
+  let failed = 0;
+
+  for (const { commodityId, qty } of entries) {
+    try {
+      const { data: existing, error: findErr } = await supabase
+        .from('sales_history')
+        .select('id, sold_b2c_kg, sold_b2b_kg')
+        .eq('commodity_id', commodityId)
+        .eq('recorded_date', recordedDate)
+        .maybeSingle();
+      if (findErr) throw findErr;
+
+      const prevB2c = Number(existing?.sold_b2c_kg ?? 0);
+      const prevB2b = Number(existing?.sold_b2b_kg ?? 0);
+      const soldB2c = buyerMode === 'B2C' ? prevB2c + qty : prevB2c;
+      const soldB2b = buyerMode === 'B2B' ? prevB2b + qty : prevB2b;
+      const totalDemand = Math.round((soldB2c + soldB2b) * 100) / 100;
+
+      if (existing) {
+        const { error } = await supabase
+          .from('sales_history')
+          .update({
+            sold_b2c_kg: soldB2c,
+            sold_b2b_kg: soldB2b,
+            total_demand_kg: totalDemand,
+            is_weekend: isWeekendIso(recordedDate),
+          })
+          .eq('id', existing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('sales_history').insert({
+          recorded_date: recordedDate,
+          commodity_id: commodityId,
+          sold_b2c_kg: soldB2c,
+          sold_b2b_kg: soldB2b,
+          total_demand_kg: totalDemand,
+          weather_condition: 'cerah',
+          is_weekend: isWeekendIso(recordedDate),
+        });
+        if (error) throw error;
+      }
+
+      recorded++;
+    } catch (err) {
+      failed++;
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[sales-history] gagal mencatat checkout ${commodityId} ${recordedDate}: ${message}`
+      );
+    }
+  }
+
+  return { recorded, failed };
 }
 
 async function requireProduct(id: string) {
@@ -338,7 +417,14 @@ app.post('/api/v1/orders', async (c) => {
       'Simpan order'
     );
 
-    return c.json({ success: true, orderId: newOrderRow.id });
+    // Checkout = permintaan nyata, jadi langsung tercatat sebagai data historis.
+    // Kalau pencatatan gagal, order tetap dianggap sukses (hanya di-log).
+    const sales = await recordSalesFromOrder(
+      [...requested].map(([commodityId, qty]) => ({ commodityId, qty })),
+      buyerMode
+    );
+
+    return c.json({ success: true, orderId: newOrderRow.id, salesHistory: sales });
   } catch (err) {
     // Kompensasi: kembalikan stok yang sudah terlanjur dipotong kalau order gagal dibuat.
     for (const a of applied.reverse()) {

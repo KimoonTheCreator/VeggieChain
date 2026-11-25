@@ -105,5 +105,10 @@ export interface ForecastResult {
   dailySeries: DailyForecastPoint[];
   aiInsight?: string;
   aiModel?: string;
+  /** Rata-rata harian setelah transaksi one-off dikeluarkan. */
+  baselineDailyKg?: number;
+  /** Total kg transaksi one-off (pembelian bulk) yang tidak dipakai sebagai baseline. */
+  oneOffExcludedKg?: number;
+  oneOffExcludedCount?: number;
   recentHistory?: SalesHistoryRecord[];
 }
