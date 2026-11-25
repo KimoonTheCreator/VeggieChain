@@ -1,6 +1,5 @@
 import React, { useRef, useState } from 'react';
 import {
-  Leaf,
   User,
   ShoppingBasket,
   Search,
@@ -232,8 +231,12 @@ export const BuyerApp: React.FC<BuyerAppProps> = ({
             <div className="veggie-header-gradient px-5 pt-4 pb-5 relative overflow-hidden">
               <div className="flex items-center justify-between mb-4 relative z-10">
                 <div className="flex items-center gap-2">
-                  <div className="w-9 h-9 rounded-xl bg-[#117a37] text-white flex items-center justify-center shadow-sm">
-                    <Leaf className="w-4 h-4" />
+                  <div className="w-9 h-9 rounded-xl bg-white/90 border border-emerald-200/70 flex items-center justify-center shadow-sm p-1">
+                    <img
+                      src="/favicon.svg"
+                      alt="Logo VeggieChain"
+                      className="w-full h-full object-contain"
+                    />
                   </div>
                   <span className="font-extrabold text-lg tracking-tight text-slate-900">
                     Veggie<span className="text-[#117a37]">Chain</span>
