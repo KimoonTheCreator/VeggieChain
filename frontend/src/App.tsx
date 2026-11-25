@@ -7,6 +7,7 @@ import type {
   Order,
   Product,
   PurchaseOrder,
+  SalesHistoryRecord,
   SupplyPlan,
   UserRole,
 } from './types/veggiechain';
@@ -43,6 +44,7 @@ export function App() {
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>(
     INITIAL_PURCHASE_ORDERS
   );
+  const [salesHistory, setSalesHistory] = useState<SalesHistoryRecord[]>([]);
   const [isPeakSeason, setIsPeakSeason] = useState(false);
 
   // Toast Notification
@@ -63,6 +65,7 @@ export function App() {
       if (data.orders) setOrders(data.orders);
       if (data.supplyPlans) setSupplyPlans(data.supplyPlans);
       if (data.purchaseOrders) setPurchaseOrders(data.purchaseOrders);
+      if (data.salesHistory) setSalesHistory(data.salesHistory);
     } catch (err) {
       // Jangan diam saja: tanpa ini, UI tampak normal memakai data mock.
       notify(
@@ -74,6 +77,21 @@ export function App() {
 
   useEffect(() => {
     refreshState();
+  }, []);
+
+  // Saat tab/jendela kembali aktif (mis. checkout dilakukan di tab lain),
+  // tarik state terbaru supaya stok dan riwayat penjualan tidak basi.
+  useEffect(() => {
+    const sync = () => refreshState();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') sync();
+    };
+    window.addEventListener('focus', sync);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('focus', sync);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, []);
 
   const handleSwitchRole = (role: UserRole, subTab?: string) => {
@@ -202,10 +220,15 @@ export function App() {
     gradeBKg: number
   ) => {
     try {
-      await veggieApi.submitQcGrading(poNumber, gradeAKg, gradeBKg);
+      const result = await veggieApi.submitQcGrading(
+        poNumber,
+        gradeAKg,
+        gradeBKg
+      );
       await refreshState();
+      const pouches = Number(result?.gradeBPouches ?? gradeBKg * 2);
       notify(
-        `QC Selesai: +${gradeAKg}kg Grade-A & +${gradeBKg}kg Olahan Grade-B masuk stok WMS.`
+        `QC Selesai: +${gradeAKg} kg Grade-A & +${pouches} pouch Grade-B (${gradeBKg} kg olahan) masuk stok WMS.`
       );
     } catch {
       notify('Gagal menyimpan hasil QC.', true);
@@ -321,6 +344,7 @@ export function App() {
             supplyPlans={supplyPlans}
             purchaseOrders={purchaseOrders}
             orders={orders}
+            salesHistory={salesHistory}
             isPeakSeason={isPeakSeason}
             initialSubTab={opsSubTab}
             onDispatchSupplyPlan={handleDispatchSupplyPlan}

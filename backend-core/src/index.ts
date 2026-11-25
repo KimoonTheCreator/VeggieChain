@@ -67,6 +67,59 @@ function formatHarvestDate(daysAhead = 4): string {
   return `${d.getDate()} ${MONTHS_ID[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+/**
+ * Paket B2B (PRD-004) adalah bundling VIRTUAL 25 kg: stoknya tidak diisi
+ * manual, melainkan dihitung otomatis dari stok komoditas segar.
+ *
+ * Resep 1 krat = 10 kg Brokoli + 8 kg Tomat + 7 kg Wortel (total 25 kg).
+ * Kalau komposisi bisnis berubah, cukup ubah konstanta ini (dan salinannya
+ * di frontend/src/components/ops/InventoryPanel.tsx untuk tampilan).
+ */
+const BUNDLE_PRODUCT_ID = 'PRD-004';
+const BUNDLE_RECIPE: Readonly<Record<string, number>> = {
+  'PRD-001': 10,
+  'PRD-002': 8,
+  'PRD-005': 7,
+};
+
+/** Berapa krat paket yang bisa dirakit dari stok komponen saat ini. */
+function deriveBundleStock(
+  products: Array<{ id: string; stock_kg: number | null }>
+): number {
+  let capacity = Number.POSITIVE_INFINITY;
+  for (const [componentId, perKrat] of Object.entries(BUNDLE_RECIPE)) {
+    const component = products.find((p) => p.id === componentId);
+    if (!component) return 0;
+    capacity = Math.min(
+      capacity,
+      Math.floor(Number(component.stock_kg ?? 0) / perKrat)
+    );
+  }
+  return Number.isFinite(capacity) ? Math.max(0, capacity) : 0;
+}
+
+/**
+ * Sinkronkan kolom stock_kg PRD-004 dengan kapasitas rakitan.
+ * Best-effort: kegagalan hanya di-log supaya operasi utama tidak ikut gagal.
+ */
+async function syncBundleStock(): Promise<void> {
+  try {
+    const { data, error } = await supabase.from('products').select('id, stock_kg');
+    if (error) throw error;
+    const capacity = deriveBundleStock(
+      (data ?? []) as Array<{ id: string; stock_kg: number | null }>
+    );
+    const { error: updErr } = await supabase
+      .from('products')
+      .update({ stock_kg: capacity })
+      .eq('id', BUNDLE_PRODUCT_ID);
+    if (updErr) throw updErr;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[bundle] gagal sinkronisasi stok ${BUNDLE_PRODUCT_ID}: ${message}`);
+  }
+}
+
 /** Insert dengan retry ketika ID bentrok (Postgres unique_violation = 23505). */
 async function insertWithRetry(
   table: string,
@@ -170,17 +223,32 @@ app.get('/health', (c) => c.json({ status: 'ok', service: 'VeggieChain Core + De
 
 // 1. Ambil seluruh state aplikasi dari Supabase
 app.get('/api/v1/state', async (c) => {
-  const [prodRes, orderRes, planRes, poRes] = await Promise.all([
+  const [prodRes, orderRes, planRes, poRes, salesRes] = await Promise.all([
     supabase.from('products').select('*').order('id', { ascending: true }),
     supabase.from('orders').select('*').order('created_at', { ascending: false }),
     supabase.from('supply_plans').select('*').order('created_at', { ascending: false }),
     supabase.from('purchase_orders').select('*').order('created_at', { ascending: false }),
+    // Riwayat penjualan ikut di /state supaya panel Ops bisa menampilkannya
+    // langsung setelah checkout, tanpa menunggu respons AI.
+    supabase
+      .from('sales_history')
+      .select('id, recorded_date, commodity_id, sold_b2c_kg, sold_b2b_kg, total_demand_kg, weather_condition, is_weekend')
+      .order('recorded_date', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(120),
   ]);
 
   const productsRaw = must(prodRes, 'Ambil products') ?? [];
   const ordersRaw = must(orderRes, 'Ambil orders') ?? [];
   const plansRaw = must(planRes, 'Ambil supply plans') ?? [];
   const poRaw = must(poRes, 'Ambil purchase orders') ?? [];
+  const salesRaw = must(salesRes, 'Ambil sales history') ?? [];
+
+  // PRD-004 selalu ditampilkan sebagai kapasitas rakitan terkini, bukan angka
+  // stok lama di DB (bisa basi kalau komponen berubah).
+  const bundleCapacity = deriveBundleStock(
+    productsRaw as Array<{ id: string; stock_kg: number | null }>
+  );
 
   const products = productsRaw.map((p) => ({
     id: p.id,
@@ -191,7 +259,7 @@ app.get('/api/v1/state', async (c) => {
     badgeColor: p.badge_color,
     farmer: p.farmer,
     warehouse: p.warehouse,
-    stockKg: p.stock_kg,
+    stockKg: p.id === BUNDLE_PRODUCT_ID ? bundleCapacity : p.stock_kg,
     baseWeeklySales: p.base_weekly_sales,
     baseFarmerPrice: p.base_farmer_price,
     rating: Number(p.rating),
@@ -241,7 +309,7 @@ app.get('/api/v1/state', async (c) => {
     status: po.status,
   }));
 
-  return c.json({ products, orders, supplyPlans, purchaseOrders });
+  return c.json({ products, orders, supplyPlans, purchaseOrders, salesHistory: salesRaw });
 });
 
 // 2. Endpoint DeepSeek AI Demand Forecasting
@@ -316,10 +384,20 @@ app.post('/api/v1/sales-history', async (c) => {
 });
 
 // 4. Update Stok Cold Storage Manual di Supabase
+// Catatan: kolom `stock_kg` menyimpan jumlah dalam SATUAN JUAL produk
+// (kg / krat / pouch), bukan selalu kilogram.
 app.patch('/api/v1/products/:id/stock', async (c) => {
   const id = c.req.param('id');
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-  const stockKg = Math.round(toNumber(body.stockKg, 'stockKg'));
+  const stockKg = toNumber(body.stockKg, 'stockKg');
+  if (!Number.isInteger(stockKg)) {
+    badRequest('stockKg harus bilangan bulat karena stok dihitung dalam satuan jual');
+  }
+  if (id === BUNDLE_PRODUCT_ID) {
+    badRequest(
+      'Stok Paket B2B dihitung otomatis dari stok komoditas segar dan tidak bisa diubah manual'
+    );
+  }
 
   const { data, error } = await supabase
     .from('products')
@@ -328,6 +406,9 @@ app.patch('/api/v1/products/:id/stock', async (c) => {
     .select('id');
   if (error) throw new HTTPException(502, { message: `Update stok gagal: ${error.message}` });
   if (!data || data.length === 0) throw new HTTPException(404, { message: `Komoditas ${id} tidak ditemukan` });
+
+  // Perubahan stok komponen mengubah kapasitas rakitan Paket B2B.
+  if (BUNDLE_RECIPE[id] !== undefined) await syncBundleStock();
 
   return c.json({ success: true, id, stockKg });
 });
@@ -360,10 +441,41 @@ app.post('/api/v1/orders', async (c) => {
   let subtotal = 0;
   const applied: Array<{ id: string; before: number; after: number }> = [];
 
+  // 1) Validasi item pesanan & hitung nilai. Paket B2B dicatat sebagai item
+  //    tersendiri, tetapi stoknya tidak dipotong langsung (virtual bundle).
+  for (const [productId, qty] of requested) {
+    const prod = productMap.get(productId);
+    if (!prod) badRequest(`Produk ${productId} tidak ditemukan`);
+    const price = buyerMode === 'B2B' ? prod.price_b2b : prod.price_b2c;
+    subtotal += price * qty;
+    orderItems.push({ name: prod.name, qty, price, unit: prod.unit });
+  }
+
+  // 2) Terjemahkan pesanan menjadi pemotongan stok komponen.
+  //    1 krat PRD-004 dirakit otomatis dari 10 kg PRD-001 + 8 kg PRD-002 + 7 kg PRD-005.
+  const deductions = new Map<string, number>();
+  for (const [productId, qty] of requested) {
+    if (productId === BUNDLE_PRODUCT_ID) continue;
+    deductions.set(productId, (deductions.get(productId) ?? 0) + qty);
+  }
+  const bundleQty = requested.get(BUNDLE_PRODUCT_ID) ?? 0;
+  if (bundleQty > 0) {
+    for (const [componentId, perKrat] of Object.entries(BUNDLE_RECIPE)) {
+      deductions.set(
+        componentId,
+        (deductions.get(componentId) ?? 0) + bundleQty * perKrat
+      );
+    }
+  }
+
   try {
-    for (const [productId, qty] of requested) {
+    for (const [productId, qty] of deductions) {
       const prod = productMap.get(productId);
-      if (!prod) badRequest(`Produk ${productId} tidak ditemukan`);
+      if (!prod) {
+        throw new HTTPException(409, {
+          message: `Komponen Paket B2B ${productId} tidak ditemukan di gudang`,
+        });
+      }
       if (prod.stock_kg < qty) {
         throw new HTTPException(409, {
           message: `Stok ${prod.name} tidak cukup: tersedia ${prod.stock_kg} ${unitLabel(
@@ -371,10 +483,6 @@ app.post('/api/v1/orders', async (c) => {
           )}, diminta ${qty} ${unitLabel(prod.unit)}`,
         });
       }
-
-      const price = buyerMode === 'B2B' ? prod.price_b2b : prod.price_b2c;
-      subtotal += price * qty;
-      orderItems.push({ name: prod.name, qty, price, unit: prod.unit });
 
       // Compare-and-swap: update hanya sah kalau stok belum berubah sejak dibaca,
       // sehingga dua checkout bersamaan tidak bisa menjual stok yang sama.
@@ -423,6 +531,9 @@ app.post('/api/v1/orders', async (c) => {
       [...requested].map(([commodityId, qty]) => ({ commodityId, qty })),
       buyerMode
     );
+
+    // Komponen sudah terpotong, jadi kapasitas rakitan Paket B2B ikut turun.
+    await syncBundleStock();
 
     return c.json({ success: true, orderId: newOrderRow.id, salesHistory: sales });
   } catch (err) {
@@ -653,6 +764,10 @@ app.patch('/api/v1/purchase-orders/:poNumber/ship', async (c) => {
 });
 
 // 12. Inspeksi QC & Grading (Grade-A Segar + Grade-B Zero Waste)
+// 1 kg Grade-B diolah menjadi 2 pouch puree 500g (asumsi massa 1:1),
+// sesuai satuan jual PRD-003 (`/pouch 500g`) — bukan kg.
+const POUCHES_PER_KG_GRADE_B = 2;
+
 app.post('/api/v1/qc/grading', async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
   const poNumber = String(body.poNumber ?? '').trim();
@@ -687,6 +802,8 @@ app.post('/api/v1/qc/grading', async (c) => {
     .eq('id', po.commodity_id);
   if (aErr) throw new HTTPException(502, { message: `Tambah stok Grade-A gagal: ${aErr.message}` });
 
+  const gradeBPouches = gradeB * POUCHES_PER_KG_GRADE_B;
+
   if (gradeB > 0) {
     const { data: processed, error: bReadErr } = await supabase
       .from('products')
@@ -698,7 +815,7 @@ app.post('/api/v1/qc/grading', async (c) => {
 
     const { error: bErr } = await supabase
       .from('products')
-      .update({ stock_kg: processed.stock_kg + gradeB })
+      .update({ stock_kg: processed.stock_kg + gradeBPouches })
       .eq('id', 'PRD-003');
     if (bErr) throw new HTTPException(502, { message: `Tambah stok Grade-B gagal: ${bErr.message}` });
   }
@@ -709,7 +826,33 @@ app.post('/api/v1/qc/grading', async (c) => {
     .eq('po_number', poNumber);
   if (poErr) throw new HTTPException(502, { message: `Update status QC gagal: ${poErr.message}` });
 
-  return c.json({ success: true, gradeAKg: gradeA, gradeBKg: gradeB });
+  // Audit split grading. Best-effort: kalau kolom audit belum dibuat di Supabase,
+  // QC tetap sukses dan hanya dicatat di log.
+  try {
+    const { error: auditErr } = await supabase
+      .from('purchase_orders')
+      .update({
+        grade_a_kg: gradeA,
+        grade_b_kg: gradeB,
+        grade_b_pouches: gradeBPouches,
+        qc_completed_at: new Date().toISOString(),
+      })
+      .eq('po_number', poNumber);
+    if (auditErr) throw auditErr;
+  } catch (err) {
+    const message =
+      err instanceof Error
+        ? err.message
+        : typeof err === 'object' && err !== null && 'message' in err
+          ? String((err as { message: unknown }).message)
+          : String(err);
+    console.warn(`[qc] audit grading ${poNumber} tidak tersimpan: ${message}`);
+  }
+
+  // Grade-A yang baru masuk bisa menambah kapasitas rakitan Paket B2B.
+  await syncBundleStock();
+
+  return c.json({ success: true, gradeAKg: gradeA, gradeBKg: gradeB, gradeBPouches, processedProductId: 'PRD-003' });
 });
 
 app.onError((err, c) => {

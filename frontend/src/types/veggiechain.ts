@@ -85,6 +85,8 @@ export interface DailyForecastPoint {
 export interface SalesHistoryRecord {
   id: number;
   recorded_date: string;
+  // Ada di data /state; respons AI hanya mengirim 5 baris tanpa field ini.
+  commodity_id?: string;
   sold_b2c_kg: number;
   sold_b2b_kg: number;
   total_demand_kg: number;

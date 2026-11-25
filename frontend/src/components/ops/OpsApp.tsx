@@ -7,23 +7,27 @@ import {
   Sparkles,
   PlusCircle,
   ClipboardList,
+  Boxes,
 } from 'lucide-react';
 import type {
   ForecastResult,
   Order,
   Product,
   PurchaseOrder,
+  SalesHistoryRecord,
   SupplyPlan,
   UserRole,
 } from '../../types/veggiechain';
 import { calculateLocalForecast, formatRupiah, isWeekendDate, stockUnitLabel } from '../../utils/format';
 import { veggieApi } from '../../services/api';
+import { InventoryPanel } from './InventoryPanel';
 
 interface OpsAppProps {
   products: Product[];
   supplyPlans: SupplyPlan[];
   purchaseOrders: PurchaseOrder[];
   orders: Order[];
+  salesHistory: SalesHistoryRecord[];
   isPeakSeason: boolean;
   initialSubTab?: 'forecast' | 'qc' | 'logistics';
   onDispatchSupplyPlan: (forecast: ForecastResult) => void;
@@ -62,6 +66,7 @@ export const OpsApp: React.FC<OpsAppProps> = ({
   supplyPlans,
   purchaseOrders,
   orders,
+  salesHistory,
   isPeakSeason,
   initialSubTab = 'forecast',
   onDispatchSupplyPlan,
@@ -73,9 +78,9 @@ export const OpsApp: React.FC<OpsAppProps> = ({
   onRefreshState,
   onNotify,
 }) => {
-  const [activeTab, setActiveTab] = useState<'forecast' | 'qc' | 'logistics'>(
-    initialSubTab
-  );
+  const [activeTab, setActiveTab] = useState<
+    'forecast' | 'qc' | 'logistics' | 'inventory'
+  >(initialSubTab);
   const [selectedCommodityId, setSelectedCommodityId] = useState('PRD-001');
   const [weatherCondition, setWeatherCondition] = useState<
     'cerah' | 'hujan_sedang' | 'hujan_lebat'
@@ -115,6 +120,15 @@ export const OpsApp: React.FC<OpsAppProps> = ({
   );
 
   const forecast = aiForecast || fallbackForecast;
+
+  // Riwayat penjualan diambil dari /state, bukan dari respons AI, supaya
+  // pembelian pembeli langsung terlihat setelah refreshState tanpa menunggu
+  // DeepSeek selesai (atau tetap tampil kalau AI gagal).
+  const recentHistory = salesHistory
+    .filter((row) => row.commodity_id === selectedProduct.id)
+    .slice(0, 5);
+  const historyRows =
+    recentHistory.length > 0 ? recentHistory : forecast.recentHistory ?? [];
 
   useEffect(() => {
     let cancelled = false;
@@ -166,7 +180,9 @@ export const OpsApp: React.FC<OpsAppProps> = ({
     try {
       await veggieApi.updateProductStock(selectedCommodityId, newVal);
       await onRefreshState();
-      onNotify(`Stok aktual ${selectedProduct.name} diperbarui menjadi ${newVal} kg.`);
+      onNotify(
+        `Stok aktual ${selectedProduct.name} diperbarui menjadi ${newVal} ${stockUnitLabel(selectedProduct.unit)}.`
+      );
     } catch {
       onNotify('Gagal memperbarui stok gudang.', true);
     }
@@ -265,6 +281,10 @@ export const OpsApp: React.FC<OpsAppProps> = ({
                       </option>
                     ))}
                 </select>
+                <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                  Khusus komoditas segar Grade-A untuk prediksi permintaan. Stok
+                  olahan &amp; paket ada di tab Inventaris.
+                </p>
               </div>
 
               <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/70 flex items-center justify-between gap-2">
@@ -511,13 +531,13 @@ export const OpsApp: React.FC<OpsAppProps> = ({
                 </div>
               )}
 
-              {forecast.recentHistory && forecast.recentHistory.length > 0 && (
+              {historyRows.length > 0 && (
                 <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-200/70">
                   <p className="text-[10px] font-bold text-slate-500 mb-1.5">
                     Riwayat Penjualan Terakhir (Acuan Prediksi):
                   </p>
                   <div className="space-y-1">
-                    {forecast.recentHistory.map((row) => (
+                    {historyRows.map((row) => (
                       <div
                         key={row.id}
                         className="flex justify-between text-[10px] text-slate-600 bg-white px-2 py-1 rounded border border-slate-100"
@@ -799,6 +819,15 @@ export const OpsApp: React.FC<OpsAppProps> = ({
                         readOnly
                         className="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 font-bold text-slate-700"
                       />
+                      <p className="text-[10px] text-amber-700 mt-1">
+                        ≈{' '}
+                        {Math.max(
+                          0,
+                          pendingQcPo.qty -
+                            Math.min(gradeASplit, pendingQcPo.qty)
+                        ) * 2}{' '}
+                        pouch 500g
+                      </p>
                     </div>
                   </div>
                   <button
@@ -907,14 +936,23 @@ export const OpsApp: React.FC<OpsAppProps> = ({
             </div>
           </div>
         )}
+
+        {activeTab === 'inventory' && (
+          <InventoryPanel
+            products={products}
+            onRefreshState={onRefreshState}
+            onNotify={onNotify}
+          />
+        )}
       </main>
 
       <nav className="floating-nav bg-white rounded-t-[26px] px-4 pt-2.5 pb-4 z-30 border-t border-slate-200/70 shrink-0">
-        <div className="grid grid-cols-3 items-center text-center">
+        <div className="grid grid-cols-4 items-center text-center">
           {[
-            { id: 'forecast', label: 'Smart Forecast', Icon: AreaChart },
-            { id: 'qc', label: 'PO & QC Grading', Icon: ClipboardCheck },
-            { id: 'logistics', label: 'Logistik & 3PL', Icon: Truck },
+            { id: 'forecast', label: 'Forecast', Icon: AreaChart },
+            { id: 'qc', label: 'PO & QC', Icon: ClipboardCheck },
+            { id: 'logistics', label: 'Logistik', Icon: Truck },
+            { id: 'inventory', label: 'Inventaris', Icon: Boxes },
           ].map((nav) => {
             const isActive = activeTab === nav.id;
             return (
@@ -922,7 +960,9 @@ export const OpsApp: React.FC<OpsAppProps> = ({
                 key={nav.id}
                 type="button"
                 onClick={() =>
-                  setActiveTab(nav.id as 'forecast' | 'qc' | 'logistics')
+                  setActiveTab(
+                    nav.id as 'forecast' | 'qc' | 'logistics' | 'inventory'
+                  )
                 }
                 className={`flex flex-col items-center justify-center cursor-pointer ${
                   isActive
