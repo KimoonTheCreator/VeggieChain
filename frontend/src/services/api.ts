@@ -1,6 +1,8 @@
 import type { BuyerMode, CartItem, ForecastResult } from '../types/veggiechain';
 
-const API_BASE = 'http://localhost:3000/api/v1';
+// Default relatif: di dev diproksi Vite ke :3000, di produksi diproksi reverse proxy.
+// Bisa dioverride lewat VITE_API_BASE, mis. http://localhost:3000/api/v1
+const API_BASE = import.meta.env.VITE_API_BASE ?? '/api/v1';
 
 /** Body JSON helper. */
 const json = (method: string, body?: unknown): RequestInit => ({
