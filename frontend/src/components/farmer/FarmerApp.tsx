@@ -26,6 +26,19 @@ export const FarmerApp: React.FC<FarmerAppProps> = ({
   const getDraft = (plan: SupplyPlan) =>
     draftEdits[plan.id] || { qty: plan.targetQty, price: plan.refPrice };
 
+  const poStatusLabel = (status: PurchaseOrder['status']) =>
+    status === 'PO_ISSUED'
+      ? 'Siap Panen'
+      : status === 'HARVEST_SENT_TO_QC'
+        ? 'Terkirim ke Gudang'
+        : 'Selesai QC';
+
+  /** Satu rencana = satu PO. Keberadaan PO lebih dipercaya daripada status rencana
+   *  karena status bisa tertinggal (mis. PO sudah QC selesai tapi rencana masih
+   *  CONFIRMED_BY_FARMER). */
+  const findPlanPo = (planId: string) =>
+    purchaseOrders.find((po) => po.planId === planId);
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <main className="flex-1 overflow-y-auto no-scrollbar pb-24">
@@ -56,6 +69,8 @@ export const FarmerApp: React.FC<FarmerAppProps> = ({
 
             {supplyPlans.map((plan) => {
               const isWaiting = plan.status === 'WAITING_FARMER';
+              const planPo = findPlanPo(plan.id);
+              const isPoIssued = Boolean(planPo) || plan.status === 'PO_ISSUED';
               const draft = getDraft(plan);
 
               return (
@@ -71,10 +86,16 @@ export const FarmerApp: React.FC<FarmerAppProps> = ({
                       className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
                         isWaiting
                           ? 'bg-amber-100 text-amber-800'
-                          : 'bg-emerald-100 text-emerald-800'
+                          : isPoIssued
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-sky-100 text-sky-800'
                       }`}
                     >
-                      {isWaiting ? 'Perlu Konfirmasi' : 'Terkonfirmasi'}
+                      {isWaiting
+                        ? 'Perlu Konfirmasi'
+                        : isPoIssued
+                          ? 'PO Diterbitkan'
+                          : 'Terkonfirmasi'}
                     </span>
                   </div>
 
@@ -140,18 +161,39 @@ export const FarmerApp: React.FC<FarmerAppProps> = ({
                       </button>
                     </>
                   ) : (
-                    <div className="bg-emerald-50/70 p-2.5 rounded-xl border border-emerald-200/70 text-emerald-900">
+                    <div className="bg-emerald-50/70 p-2.5 rounded-xl border border-emerald-200/70 text-emerald-900 space-y-1.5">
                       <p>
                         Disepakati: <strong>{plan.confirmedQty} kg</strong> @{' '}
                         <strong>{formatRupiah(plan.agreedPrice)}/kg</strong>
                       </p>
-                      <button
-                        type="button"
-                        onClick={() => onSwitchRole('ops', 'forecast')}
-                        className="mt-1.5 text-[11px] font-bold text-[#117a37] underline cursor-pointer"
-                      >
-                        Menunggu Tim Ops menerbitkan PO →
-                      </button>
+                      {isPoIssued ? (
+                        <>
+                          <p className="text-[11px]">
+                            PO diterbitkan:{' '}
+                            <strong className="font-mono">{planPo?.poNumber ?? '-'}</strong>
+                            {planPo && (
+                              <span className="ml-1 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">
+                                {poStatusLabel(planPo.status)}
+                              </span>
+                            )}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('po')}
+                            className="w-full py-2 rounded-lg bg-[#117a37] text-white font-bold text-[11px] cursor-pointer"
+                          >
+                            Lihat Purchase Order →
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => onSwitchRole('ops', 'forecast')}
+                          className="text-[11px] font-bold text-[#117a37] underline cursor-pointer"
+                        >
+                          Menunggu Tim Ops menerbitkan PO →
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -193,9 +235,7 @@ export const FarmerApp: React.FC<FarmerAppProps> = ({
                           : 'bg-slate-100 text-slate-600'
                       }`}
                     >
-                      {po.status === 'PO_ISSUED'
-                        ? 'Siap Panen'
-                        : 'Terkirim ke Gudang'}
+                      {poStatusLabel(po.status)}
                     </span>
                   </div>
                   <p className="text-sm font-extrabold text-slate-900">
@@ -219,7 +259,9 @@ export const FarmerApp: React.FC<FarmerAppProps> = ({
                       onClick={() => onSwitchRole('ops', 'qc')}
                       className="w-full py-2 rounded-xl bg-slate-100 text-slate-700 font-bold text-[11px] cursor-pointer"
                     >
-                      Lihat Proses Inspeksi QC di Gudang →
+                      {po.status === 'QC_COMPLETED'
+                        ? 'QC Selesai — Lihat Hasil Grading di Gudang →'
+                        : 'Lihat Proses Inspeksi QC di Gudang →'}
                     </button>
                   )}
                 </div>
