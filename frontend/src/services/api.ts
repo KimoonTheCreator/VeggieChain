@@ -2,11 +2,48 @@ import type { BuyerMode, CartItem, ForecastResult } from '../types/veggiechain';
 
 const API_BASE = 'http://localhost:3000/api/v1';
 
+/** Body JSON helper. */
+const json = (method: string, body?: unknown): RequestInit => ({
+  method,
+  headers: { 'Content-Type': 'application/json' },
+  body: body === undefined ? undefined : JSON.stringify(body),
+});
+
+/**
+ * Semua request lewat sini supaya status non-2xx benar-benar melempar error.
+ * Sebelumnya method seperti updateProductStock/advanceOrder mengabaikan `res.ok`,
+ * jadi kegagalan database tidak pernah muncul di UI.
+ */
+async function request<T = any>(path: string, init?: RequestInit): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, init);
+  } catch {
+    throw new Error('Tidak dapat terhubung ke server backend di localhost:3000.');
+  }
+
+  const text = await res.text();
+  let body: any = null;
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = text;
+    }
+  }
+
+  if (!res.ok) {
+    const fromBody =
+      body && typeof body === 'object' ? body.error ?? body.message : undefined;
+    throw new Error(fromBody ?? `Permintaan gagal (HTTP ${res.status}).`);
+  }
+
+  return body as T;
+}
+
 export const veggieApi = {
   async fetchState() {
-    const res = await fetch(`${API_BASE}/state`);
-    if (!res.ok) throw new Error('Gagal mengambil data dari server');
-    return res.json();
+    return request('/state');
   },
 
   async predictDemand(params: {
@@ -15,13 +52,7 @@ export const veggieApi = {
     isHolidayWeek: boolean;
     customNote?: string;
   }): Promise<ForecastResult> {
-    const res = await fetch(`${API_BASE}/forecast/predict`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-    });
-    if (!res.ok) throw new Error('Gagal menjalankan AI Forecast');
-    return res.json();
+    return request<ForecastResult>('/forecast/predict', json('POST', params));
   },
 
   async addSalesHistory(params: {
@@ -32,75 +63,42 @@ export const veggieApi = {
     weatherCondition: 'cerah' | 'hujan_sedang' | 'hujan_lebat';
     isWeekend: boolean;
   }) {
-    const res = await fetch(`${API_BASE}/sales-history`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-    });
-    if (!res.ok) throw new Error('Gagal menyimpan histori penjualan');
-    return res.json();
+    return request('/sales-history', json('POST', params));
   },
 
   async updateProductStock(commodityId: string, stockKg: number) {
-    await fetch(`${API_BASE}/products/${commodityId}/stock`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stockKg }),
-    });
+    return request(`/products/${commodityId}/stock`, json('PATCH', { stockKg }));
   },
 
   async checkoutOrder(buyerMode: BuyerMode, cart: CartItem[], isPeakSeason: boolean) {
-    const res = await fetch(`${API_BASE}/orders`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ buyerMode, cart, isPeakSeason }),
-    });
-    return res.json();
+    return request('/orders', json('POST', { buyerMode, cart, isPeakSeason }));
   },
 
   async advanceOrder(orderId: string) {
-    await fetch(`${API_BASE}/orders/${orderId}/advance`, { method: 'PATCH' });
+    return request(`/orders/${orderId}/advance`, json('PATCH'));
   },
 
   async confirmPod(orderId: string) {
-    await fetch(`${API_BASE}/orders/${orderId}/pod`, { method: 'POST' });
+    return request(`/orders/${orderId}/pod`, json('POST'));
   },
 
   async dispatchSupplyPlan(forecast: ForecastResult) {
-    const res = await fetch(`${API_BASE}/supply-plans`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(forecast),
-    });
-    return res.json();
+    return request('/supply-plans', json('POST', forecast));
   },
 
   async confirmFarmerSupply(planId: string, qty: number, price: number) {
-    await fetch(`${API_BASE}/supply-plans/${planId}/confirm`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ qty, price }),
-    });
+    return request(`/supply-plans/${planId}/confirm`, json('PATCH', { qty, price }));
   },
 
   async issuePurchaseOrder(planId: string) {
-    const res = await fetch(`${API_BASE}/purchase-orders`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ planId }),
-    });
-    return res.json();
+    return request('/purchase-orders', json('POST', { planId }));
   },
 
   async sendHarvestToQc(poNumber: string) {
-    await fetch(`${API_BASE}/purchase-orders/${poNumber}/ship`, { method: 'PATCH' });
+    return request(`/purchase-orders/${poNumber}/ship`, json('PATCH'));
   },
 
   async submitQcGrading(poNumber: string, gradeAKg: number, gradeBKg: number) {
-    await fetch(`${API_BASE}/qc/grading`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ poNumber, gradeAKg, gradeBKg }),
-    });
+    return request('/qc/grading', json('POST', { poNumber, gradeAKg, gradeBKg }));
   },
 };

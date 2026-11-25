@@ -145,6 +145,13 @@ export const FarmerApp: React.FC<FarmerAppProps> = ({
                         Disepakati: <strong>{plan.confirmedQty} kg</strong> @{' '}
                         <strong>{formatRupiah(plan.agreedPrice)}/kg</strong>
                       </p>
+                      <button
+                        type="button"
+                        onClick={() => onSwitchRole('ops', 'forecast')}
+                        className="mt-1.5 text-[11px] font-bold text-[#117a37] underline cursor-pointer"
+                      >
+                        Menunggu Tim Ops menerbitkan PO →
+                      </button>
                     </div>
                   )}
                 </div>

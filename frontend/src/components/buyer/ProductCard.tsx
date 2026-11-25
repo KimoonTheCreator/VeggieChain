@@ -1,7 +1,7 @@
 import React from 'react';
 import { CheckCircle2, Star, MapPin, Plus } from 'lucide-react';
 import type { BuyerMode, Product } from '../../types/veggiechain';
-import { formatRupiah } from '../../utils/format';
+import { formatRupiah, stockUnitLabel } from '../../utils/format';
 
 interface ProductCardProps {
   product: Product;
@@ -36,7 +36,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           <span>{product.badgeText}</span>
         </div>
         <div className="absolute bottom-2.5 right-2.5 bg-slate-900/80 backdrop-blur-sm text-white px-2.5 py-1 rounded-full text-[10px] font-semibold tabular-nums">
-          Stok Gudang: {product.stockKg} kg
+          Stok Gudang: {product.stockKg} {stockUnitLabel(product.unit)}
         </div>
       </div>
 

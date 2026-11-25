@@ -16,7 +16,7 @@ import type {
   SupplyPlan,
   UserRole,
 } from '../../types/veggiechain';
-import { calculateLocalForecast, formatRupiah } from '../../utils/format';
+import { calculateLocalForecast, formatRupiah, isWeekendDate, stockUnitLabel } from '../../utils/format';
 import { veggieApi } from '../../services/api';
 
 interface OpsAppProps {
@@ -35,6 +35,27 @@ interface OpsAppProps {
   onRefreshState: () => Promise<void>;
   onNotify: (msg: string, warn?: boolean) => void;
 }
+
+// Dipakai kalau tabel products kosong, supaya panel Ops tidak crash saat render.
+const EMPTY_PRODUCT: Product = {
+  id: '-',
+  name: 'Belum ada produk',
+  category: 'Sayur Segar',
+  grade: 'Grade-A',
+  badgeText: '',
+  badgeColor: '',
+  farmer: '-',
+  warehouse: '-',
+  stockKg: 0,
+  baseWeeklySales: 0,
+  baseFarmerPrice: 0,
+  rating: 0,
+  priceB2C: 0,
+  priceB2B: 0,
+  unit: '/kg',
+  image: '',
+  qcNotes: '',
+};
 
 export const OpsApp: React.FC<OpsAppProps> = ({
   products,
@@ -77,7 +98,7 @@ export const OpsApp: React.FC<OpsAppProps> = ({
   const [manualStockInput, setManualStockInput] = useState<string>('');
 
   const selectedProduct =
-    products.find((p) => p.id === selectedCommodityId) || products[0];
+    products.find((p) => p.id === selectedCommodityId) ?? products[0] ?? EMPTY_PRODUCT;
 
   useEffect(() => {
     setManualStockInput(String(selectedProduct.stockKg));
@@ -128,7 +149,7 @@ export const OpsApp: React.FC<OpsAppProps> = ({
         soldB2cKg: manualB2c,
         soldB2bKg: manualB2b,
         weatherCondition: manualWeather,
-        isWeekend: [0, 5, 6].includes(new Date(manualDate).getDay()),
+        isWeekend: isWeekendDate(manualDate),
       });
       setForecastTrigger((prev) => prev + 1);
       setShowManualInput(false);
@@ -154,9 +175,27 @@ export const OpsApp: React.FC<OpsAppProps> = ({
   const pendingQcPo = purchaseOrders.find(
     (po) => po.status === 'HARVEST_SENT_TO_QC'
   );
-  const [gradeASplit, setGradeASplit] = useState<number>(
-    pendingQcPo ? Math.round(pendingQcPo.qty * 0.85) : 0
+
+  // Grade-A dihitung dari PO yang sedang menunggu QC. Nilai diturunkan saat render
+  // (bukan disimpan sekali di useState) supaya tidak basi ketika PO baru masuk
+  // setelah refreshState / ganti role — kalau basi, semua kg bisa masuk Grade-B
+  // dan stok produk segar tidak bertambah.
+  const [gradeAState, setGradeAState] = useState<{ po: string | null; value: number }>(
+    () => ({
+      po: pendingQcPo?.poNumber ?? null,
+      value: pendingQcPo ? Math.round(pendingQcPo.qty * 0.85) : 0,
+    })
   );
+
+  const gradeASplit =
+    gradeAState.po === (pendingQcPo?.poNumber ?? null)
+      ? gradeAState.value
+      : pendingQcPo
+        ? Math.round(pendingQcPo.qty * 0.85)
+        : 0;
+
+  const setGradeASplit = (value: number) =>
+    setGradeAState({ po: pendingQcPo?.poNumber ?? null, value });
 
   const maxDailyKg = Math.max(
     ...forecast.dailySeries.map((d) => d.demandKg),
@@ -222,7 +261,7 @@ export const OpsApp: React.FC<OpsAppProps> = ({
                     .filter((p) => p.grade === 'Grade-A' && p.id !== 'PRD-004')
                     .map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.name} (Stok: {p.stockKg} kg)
+                        {p.name} (Stok: {p.stockKg} {stockUnitLabel(p.unit)})
                       </option>
                     ))}
                 </select>
@@ -231,7 +270,7 @@ export const OpsApp: React.FC<OpsAppProps> = ({
               <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/70 flex items-center justify-between gap-2">
                 <div className="flex-1">
                   <label className="block text-[10px] font-bold text-slate-500">
-                    Stok Fisik Gudang Saat Ini (kg)
+                    Stok Fisik Gudang Saat Ini ({stockUnitLabel(selectedProduct.unit)})
                   </label>
                   <input
                     type="number"
@@ -489,7 +528,7 @@ export const OpsApp: React.FC<OpsAppProps> = ({
                       Stok Cold Storage Saat Ini
                     </span>
                     <span className="text-slate-900 tabular-nums">
-                      {forecast.currentStockKg} kg
+                      {forecast.currentStockKg} {stockUnitLabel(selectedProduct.unit)}
                     </span>
                   </div>
                   <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
@@ -564,6 +603,11 @@ export const OpsApp: React.FC<OpsAppProps> = ({
                   Pengadaan Hulu
                 </span>
               </div>
+              <p className="text-[10px] leading-relaxed text-slate-500 mb-2">
+                Alur: form → konfirmasi petani → PO → panen → QC. Stok cold
+                storage baru bertambah pada langkah <strong>QC grading</strong>,
+                bukan saat form dikirim.
+              </p>
               <div className="space-y-2.5">
                 {supplyPlans.map((plan) => {
                   const isConfirmed = plan.status === 'CONFIRMED_BY_FARMER';

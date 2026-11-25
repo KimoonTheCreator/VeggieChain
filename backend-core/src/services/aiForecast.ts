@@ -27,9 +27,10 @@ export async function generateAiDemandForecast(input: ForecastInput) {
     .order('id', { ascending: false })
     .limit(14);
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.DEEPSEEK_API_KEY;
   const dayLabels = ['Rab', 'Kam', 'Jum', 'Sab', 'Min', 'Sen', 'Sel'];
-  const modelName = 'gemini-3.8-flash';
+  const modelName = 'deepseek-chat';
+  const apiEndpoint = 'https://api.deepseek.com/chat/completions';
 
   let predictedDemandKg = 0;
   let dailySeries: { dayLabel: string; demandKg: number }[] = [];
@@ -50,65 +51,43 @@ export async function generateAiDemandForecast(input: ForecastInput) {
         data_historis_terbaru_dari_database: historyRows || [],
       };
 
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            systemInstruction: {
-              parts: [
-                {
-                  text: 'Anda adalah layanan mikro StockPrediction (AI Demand Forecasting) pada sistem rantai pasok pertanian VeggieChain. Analisis data historis penjualan B2C & B2B dari database untuk memproyeksikan permintaan harian (kg) selama 7 hari ke depan (Rab, Kam, Jum, Sab, Min, Sen, Sel). Berikan bobot lebih besar pada catatan penjualan terbaru yang diinput pengguna, lonjakan akhir pekan (Jum-Min), kondisi cuaca, dan catatan lapangan.',
-                },
-              ],
+      const response = await fetch(apiEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: modelName,
+          temperature: 0.2,
+          response_format: { type: 'json_object' },
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Anda adalah layanan mikro StockPrediction (AI Demand Forecasting) pada sistem rantai pasok pertanian VeggieChain. Analisis data historis penjualan B2C & B2B dari database untuk memproyeksikan permintaan harian (kg) selama 7 hari ke depan (Rab, Kam, Jum, Sab, Min, Sen, Sel). Berikan bobot lebih besar pada catatan penjualan terbaru yang diinput pengguna, lonjakan akhir pekan (Jum-Min), kondisi cuaca, dan catatan lapangan. Balas HANYA dengan objek JSON valid tanpa penjelasan tambahan, dengan bentuk tepat seperti ini: {"dailySeries":[{"dayLabel":"Rab","demandKg":0},{"dayLabel":"Kam","demandKg":0},{"dayLabel":"Jum","demandKg":0},{"dayLabel":"Sab","demandKg":0},{"dayLabel":"Min","demandKg":0},{"dayLabel":"Sen","demandKg":0},{"dayLabel":"Sel","demandKg":0}],"aiInsight":"ringkasan analisis singkat dalam Bahasa Indonesia"}.',
             },
-            contents: [
-              {
-                role: 'user',
-                parts: [
-                  {
-                    text: `Hitung proyeksi permintaan 7 hari ke depan berdasarkan konteks data berikut:\n${JSON.stringify(contextPayload)}`,
-                  },
-                ],
-              },
-            ],
-            generationConfig: {
-              temperature: 0.2,
-              responseMimeType: 'application/json',
-              responseSchema: {
-                type: 'OBJECT',
-                properties: {
-                  dailySeries: {
-                    type: 'ARRAY',
-                    items: {
-                      type: 'OBJECT',
-                      properties: {
-                        dayLabel: { type: 'STRING' },
-                        demandKg: { type: 'INTEGER' },
-                      },
-                      required: ['dayLabel', 'demandKg'],
-                    },
-                  },
-                  aiInsight: {
-                    type: 'STRING',
-                  },
-                },
-                required: ['dailySeries', 'aiInsight'],
-              },
+            {
+              role: 'user',
+              content: `Hitung proyeksi permintaan 7 hari ke depan berdasarkan konteks data berikut:\n${JSON.stringify(contextPayload)}`,
             },
-          }),
-        }
-      );
+          ],
+        }),
+        signal: AbortSignal.timeout(45_000),
+      });
 
       if (!response.ok) {
         const errBody = await response.text();
-        throw new Error(`Gemini API HTTP ${response.status}: ${errBody}`);
+        throw new Error(`DeepSeek API HTTP ${response.status}: ${errBody}`);
       }
 
       const result = await response.json();
-      const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
-      const parsed = JSON.parse(rawText);
+      const rawText = result?.choices?.[0]?.message?.content ?? '';
+      const cleanedText = rawText
+        .trim()
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/```$/, '');
+      const parsed = JSON.parse(cleanedText);
 
       if (Array.isArray(parsed.dailySeries) && parsed.dailySeries.length === 7) {
         dailySeries = parsed.dailySeries.map((d: any, i: number) => ({
@@ -116,12 +95,13 @@ export async function generateAiDemandForecast(input: ForecastInput) {
           demandKg: Math.max(1, Math.round(Number(d.demandKg) || 10)),
         }));
         predictedDemandKg = dailySeries.reduce((sum, item) => sum + item.demandKg, 0);
+        aiModel = result?.model || modelName;
         aiInsight =
           parsed.aiInsight ||
-          'Proyeksi Gemini AI memperhitungkan tren penjualan terbaru di database, faktor cuaca, dan pola akhir pekan.';
+          'Proyeksi DeepSeek AI memperhitungkan tren penjualan terbaru di database, faktor cuaca, dan pola akhir pekan.';
       }
     } catch (err) {
-      console.error('Error memanggil Gemini API:', err);
+      console.error('Error memanggil DeepSeek API:', err);
     }
   }
 
@@ -148,7 +128,7 @@ export async function generateAiDemandForecast(input: ForecastInput) {
       demandKg: Math.max(1, Math.round(predictedDemandKg * weights[idx])),
     }));
     aiInsight =
-      'Menggunakan kalkulasi rata-rata historis Supabase (pastikan GEMINI_API_KEY di backend-core/.env sudah valid untuk mengaktifkan Gemini AI).';
+      'Menggunakan kalkulasi rata-rata historis Supabase (pastikan DEEPSEEK_API_KEY di backend-core/.env sudah valid untuk mengaktifkan DeepSeek AI).';
   }
 
   const safetyBufferKg = Math.round(predictedDemandKg * 0.15);

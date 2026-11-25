@@ -22,6 +22,7 @@ import { BuyerApp } from './components/buyer/BuyerApp';
 import { OpsApp } from './components/ops/OpsApp';
 import { FarmerApp } from './components/farmer/FarmerApp';
 import { veggieApi } from './services/api';
+import { stockUnitLabel } from './utils/format';
 
 export function App() {
   const [activeRole, setActiveRole] = useState<UserRole>('buyer');
@@ -62,8 +63,12 @@ export function App() {
       if (data.orders) setOrders(data.orders);
       if (data.supplyPlans) setSupplyPlans(data.supplyPlans);
       if (data.purchaseOrders) setPurchaseOrders(data.purchaseOrders);
-    } catch {
-      // Tetap gunakan state lokal jika backend belum dijalankan
+    } catch (err) {
+      // Jangan diam saja: tanpa ini, UI tampak normal memakai data mock.
+      notify(
+        `Gagal sinkron dengan server: ${err instanceof Error ? err.message : 'tidak diketahui'}`,
+        true
+      );
     }
   };
 
@@ -92,33 +97,53 @@ export function App() {
     });
   };
 
-  const handleAddToCart = (productId: string) => {
+  const handleAddToCart = (productId: string, qty = 1) => {
     const product = products.find((p) => p.id === productId);
     if (!product || product.stockKg <= 0) {
       notify('Stok gudang sedang kosong.', true);
       return;
     }
-    setCart((prev) => {
-      const existing = prev.find((i) => i.productId === productId);
-      if (existing) {
-        return prev.map((i) =>
-          i.productId === productId ? { ...i, qty: i.qty + 1 } : i
-        );
-      }
-      return [...prev, { productId, qty: 1 }];
-    });
-    notify(`${product.name} ditambahkan ke keranjang.`);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      notify('Jumlah yang dimasukkan tidak valid.', true);
+      return;
+    }
+    const existing = cart.find((i) => i.productId === productId);
+    const nextQty = (existing?.qty ?? 0) + Math.floor(qty);
+    if (nextQty > product.stockKg) {
+      notify(
+        `Stok ${product.name} hanya ${product.stockKg} ${stockUnitLabel(product.unit)}.`,
+        true
+      );
+      return;
+    }
+    setCart((prev) =>
+      existing
+        ? prev.map((i) =>
+            i.productId === productId ? { ...i, qty: nextQty } : i
+          )
+        : [...prev, { productId, qty: Math.floor(qty) }]
+    );
+    notify(
+      `${Math.floor(qty)} ${stockUnitLabel(product.unit)} ${product.name} ditambahkan ke keranjang.`
+    );
   };
 
   const handleUpdateCartQty = (productId: string, delta: number) => {
+    const item = cart.find((i) => i.productId === productId);
+    if (!item) return;
+    const product = products.find((p) => p.id === productId);
+    const nextQty = item.qty + delta;
+    if (delta > 0 && product && nextQty > product.stockKg) {
+      notify(
+        `Stok ${product.name} hanya ${product.stockKg} ${stockUnitLabel(product.unit)}.`,
+        true
+      );
+      return;
+    }
     setCart((prev) =>
       prev
-        .map((item) =>
-          item.productId === productId
-            ? { ...item, qty: item.qty + delta }
-            : item
-        )
-        .filter((item) => item.qty > 0)
+        .map((i) => (i.productId === productId ? { ...i, qty: nextQty } : i))
+        .filter((i) => i.qty > 0)
     );
   };
 
@@ -126,41 +151,28 @@ export function App() {
     try {
       await veggieApi.checkoutOrder(buyerMode, cart, isPeakSeason);
       await refreshState();
-    } catch {
-      setProducts((prev) =>
-        prev.map((prod) => {
-          const bought = cart.find((c) => c.productId === prod.id);
-          return bought
-            ? { ...prod, stockKg: Math.max(0, prod.stockKg - bought.qty) }
-            : prod;
-        })
+      setCart([]);
+      notify('Pembayaran valid! Picking Ticket diterbitkan ke Gudang & Kurir.');
+    } catch (err) {
+      // Jangan klaim sukses: dulu kegagalan insert ditutupi dengan mutasi lokal.
+      notify(
+        `Checkout gagal: ${err instanceof Error ? err.message : 'tidak diketahui'}`,
+        true
       );
     }
-    setCart([]);
-    notify('Pembayaran valid! Picking Ticket diterbitkan ke Gudang & Kurir.');
   };
 
   const handleConfirmPod = async (orderId: string) => {
     try {
       await veggieApi.confirmPod(orderId);
       await refreshState();
-    } catch {
-      const timeStr = new Date().toTimeString().slice(0, 5);
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderId
-            ? {
-                ...o,
-                status: 'COMPLETED',
-                statusLabel: 'Selesai • POD Terarsip',
-                podSigned: true,
-                podTimestamp: `Hari ini, ${timeStr} WIB`,
-              }
-            : o
-        )
+      notify('POD ditandatangani & pesanan selesai.');
+    } catch (err) {
+      notify(
+        `Gagal menandatangani POD: ${err instanceof Error ? err.message : 'tidak diketahui'}`,
+        true
       );
     }
-    notify('POD ditandatangani & pesanan selesai.');
   };
 
   // ==================== HANDLERS: GUDANG, AI & SOURCING ====================

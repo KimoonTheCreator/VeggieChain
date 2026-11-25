@@ -26,7 +26,7 @@ import type {
   ProductGrade,
   UserRole,
 } from '../../types/veggiechain';
-import { formatRupiah } from '../../utils/format';
+import { formatRupiah, stockUnitLabel } from '../../utils/format';
 import { ProductCard } from './ProductCard';
 
 interface BuyerAppProps {
@@ -36,7 +36,7 @@ interface BuyerAppProps {
   buyerMode: BuyerMode;
   isPeakSeason: boolean;
   onToggleBuyerMode: () => void;
-  onAddToCart: (productId: string) => void;
+  onAddToCart: (productId: string, qty?: number) => void;
   onUpdateCartQty: (productId: string, delta: number) => void;
   onCheckout: () => void;
   onConfirmPod: (orderId: string) => void;
@@ -71,6 +71,8 @@ export const BuyerApp: React.FC<BuyerAppProps> = ({
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [podOrder, setPodOrder] = useState<Order | null>(null);
+  const [qtyProduct, setQtyProduct] = useState<Product | null>(null);
+  const [qtyDraft, setQtyDraft] = useState<string>('1');
 
   // Signature Pad Refs
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -172,6 +174,51 @@ export const BuyerApp: React.FC<BuyerAppProps> = ({
   }, 0);
 
   const shippingFee = buyerMode === 'B2B' ? 25000 : 10000;
+
+  // ---- Dialog jumlah sebelum masuk keranjang ----
+  const openQtyPrompt = (productId: string) => {
+    const prod = products.find((p) => p.id === productId);
+    if (!prod || prod.stockKg <= 0) {
+      onNotify('Stok gudang sedang kosong.', true);
+      return;
+    }
+    const inCart = cart.find((i) => i.productId === productId)?.qty ?? 0;
+    if (inCart >= prod.stockKg) {
+      onNotify(
+        `Stok ${prod.name} hanya ${prod.stockKg} ${stockUnitLabel(prod.unit)} dan semuanya sudah ada di keranjang.`,
+        true
+      );
+      return;
+    }
+    setQtyDraft('1');
+    setQtyProduct(prod);
+  };
+
+  const qtyInCart = qtyProduct
+    ? cart.find((i) => i.productId === qtyProduct.id)?.qty ?? 0
+    : 0;
+  const qtyRemaining = qtyProduct ? Math.max(0, qtyProduct.stockKg - qtyInCart) : 0;
+  const qtyPrice = qtyProduct
+    ? buyerMode === 'B2B'
+      ? qtyProduct.priceB2B
+      : qtyProduct.priceB2C
+    : 0;
+  const qtyNumber = Math.floor(Number(qtyDraft));
+  const qtyValid =
+    Number.isFinite(qtyNumber) && qtyNumber > 0 && qtyNumber <= qtyRemaining;
+
+  const confirmQty = () => {
+    if (!qtyProduct) return;
+    if (!qtyValid) {
+      onNotify(
+        `Jumlah harus antara 1 dan ${qtyRemaining} ${stockUnitLabel(qtyProduct.unit)}.`,
+        true
+      );
+      return;
+    }
+    onAddToCart(qtyProduct.id, qtyNumber);
+    setQtyProduct(null);
+  };
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden relative">
@@ -359,7 +406,7 @@ export const BuyerApp: React.FC<BuyerAppProps> = ({
                     product={product}
                     buyerMode={buyerMode}
                     onSelect={setSelectedProduct}
-                    onAddToCart={onAddToCart}
+                    onAddToCart={openQtyPrompt}
                   />
                 ))
               )}
@@ -419,7 +466,7 @@ export const BuyerApp: React.FC<BuyerAppProps> = ({
                   product={product}
                   buyerMode={buyerMode}
                   onSelect={setSelectedProduct}
-                  onAddToCart={onAddToCart}
+                  onAddToCart={openQtyPrompt}
                 />
               ))}
             </div>
@@ -758,7 +805,9 @@ export const BuyerApp: React.FC<BuyerAppProps> = ({
                   </p>
                   <p className="text-xs text-slate-600">
                     {selectedProduct.warehouse} • Tersedia{' '}
-                    <strong>{selectedProduct.stockKg} kg</strong>
+                    <strong>
+                      {selectedProduct.stockKg} {stockUnitLabel(selectedProduct.unit)}
+                    </strong>
                   </p>
                 </div>
               </div>
@@ -785,7 +834,7 @@ export const BuyerApp: React.FC<BuyerAppProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  onAddToCart(selectedProduct.id);
+                  openQtyPrompt(selectedProduct.id);
                   setSelectedProduct(null);
                 }}
                 className="flex-1 py-3 rounded-2xl bg-[#117a37] text-white font-bold text-sm cursor-pointer"
@@ -965,6 +1014,122 @@ export const BuyerApp: React.FC<BuyerAppProps> = ({
                   </button>
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== MODAL: JUMLAH SEBELUM MASUK KERANJANG ==================== */}
+      {qtyProduct && (
+        <div className="absolute inset-0 z-40 bg-slate-900/50 backdrop-blur-sm flex items-end">
+          <div className="bg-white w-full rounded-t-[32px] p-5">
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900">
+                  Mau berapa {stockUnitLabel(qtyProduct.unit)}?
+                </h3>
+                <p className="text-[11px] text-slate-500">{qtyProduct.name}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQtyProduct(null)}
+                className="w-8 h-8 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200/70 rounded-2xl p-3 mb-3 space-y-1 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Harga</span>
+                <span className="font-semibold text-slate-800">
+                  {formatRupiah(qtyPrice)} {qtyProduct.unit}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Stok tersedia</span>
+                <span className="font-semibold text-slate-800">
+                  {qtyRemaining} {stockUnitLabel(qtyProduct.unit)}
+                  {qtyInCart > 0 && (
+                    <span className="text-slate-400"> ({qtyInCart} di keranjang)</span>
+                  )}
+                </span>
+              </div>
+            </div>
+
+            <label className="block text-[11px] font-bold text-slate-700 mb-1">
+              Jumlah yang ingin dibeli ({stockUnitLabel(qtyProduct.unit)})
+            </label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setQtyDraft(String(Math.max(1, (Number(qtyDraft) || 1) - 1)))
+                }
+                className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 font-bold text-lg cursor-pointer"
+              >
+                -
+              </button>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={qtyRemaining}
+                value={qtyDraft}
+                autoFocus
+                onChange={(e) => setQtyDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') confirmQty();
+                }}
+                className="flex-1 text-center text-lg font-extrabold text-slate-900 bg-slate-50 border border-slate-200 rounded-xl py-2 focus:outline-none focus:border-[#117a37]"
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  setQtyDraft(
+                    String(Math.min(qtyRemaining, (Number(qtyDraft) || 0) + 1))
+                  )
+                }
+                className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 font-bold text-lg cursor-pointer"
+              >
+                +
+              </button>
+            </div>
+
+            {!qtyValid && (
+              <p className="text-[11px] text-rose-600 font-semibold mt-2">
+                Jumlah harus antara 1 dan {qtyRemaining}{' '}
+                {stockUnitLabel(qtyProduct.unit)}.
+              </p>
+            )}
+
+            <div className="flex items-center justify-between mt-3 text-xs">
+              <span className="text-slate-500">Subtotal</span>
+              <span className="font-extrabold text-[#117a37] text-sm">
+                {formatRupiah(qtyPrice * (qtyValid ? qtyNumber : 0))}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5 mt-4">
+              <button
+                type="button"
+                onClick={() => setQtyProduct(null)}
+                className="py-3 rounded-2xl bg-slate-100 text-slate-700 font-bold text-xs cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={confirmQty}
+                disabled={!qtyValid}
+                className={`py-3 rounded-2xl font-bold text-xs ${
+                  qtyValid
+                    ? 'bg-[#117a37] text-white cursor-pointer'
+                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                }`}
+              >
+                Masukkan Keranjang
+              </button>
             </div>
           </div>
         </div>

@@ -4,6 +4,27 @@ export function formatRupiah(amount: number): string {
   return 'IDR ' + Math.round(amount).toLocaleString('id-ID');
 }
 
+/**
+ * Satuan stok mengikuti satuan jual produk.
+ * '/krat 25kg' -> 'krat', '/pouch 500g' -> 'pouch', '/kg' -> 'kg'.
+ * Catatan: kolom `stock_kg` menyimpan jumlah dalam satuan ini, bukan selalu kg.
+ */
+export function stockUnitLabel(unit: string): string {
+  const cleaned = (unit ?? '').replace(/^\//, '').trim();
+  return cleaned.split(/\s+/)[0] || 'kg';
+}
+
+/**
+ * Hari "weekend" versi bisnis VeggieChain: Jumat, Sabtu, Minggu.
+ * Diparse sebagai UTC agar tidak bergeser satu hari di zona waktu tertentu.
+ */
+export function isWeekendDate(isoDate: string): boolean {
+  const [year, month, day] = isoDate.split('-').map(Number);
+  if (!year || !month || !day) return false;
+  const dayOfWeek = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  return dayOfWeek === 0 || dayOfWeek === 5 || dayOfWeek === 6;
+}
+
 export function calculateLocalForecast(
   product: Product,
   weatherMultiplier: number,
